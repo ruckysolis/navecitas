@@ -28,8 +28,8 @@
     .btn-ship { border-color: #388bfd; color: #79c0ff; font-weight: bold; }
     .btn-sos { border-color: #da3633; color: #f85149; font-weight: bold; }
     .btn-mission { border-color: #f85149; color: #ff7b72; font-weight: bold; }
+    .btn-drone { border-color: #3fb950; color: #7ee787; font-weight: bold; }
 
-    /* Pestañas de Servicios en Estación */
     .station-nav { display: flex; gap: 4px; margin-top: 10px; margin-bottom: 6px; flex-wrap: wrap; }
     .nav-tab { background: #161b22; border: 1px solid #30363d; color: #8b949e; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 0.82em; }
     .nav-tab.active { background: #1f6feb; color: #fff; border-color: #58a6ff; font-weight: bold; }
@@ -84,6 +84,11 @@
       <div class="bar-track"><div id="bar-cap" class="bar-fill cap-fill"></div></div>
       <div style="font-size: 0.75em;">BODEGA: <span id="my-ore">0</span> / <span id="my-cargo-max">30</span> m³</div>
       <div class="bar-track"><div id="bar-cargo" class="bar-fill cargo-fill"></div></div>
+      <div style="font-size: 0.78em; margin-top: 4px; border-top: 1px dashed #21262d; padding-top: 4px;">
+        BAHÍA DE DRONES (<span id="drone-count">0</span> / <span id="drone-cap">1</span>):
+        <span id="drone-desc" style="color:#7ee787;">Ninguno</span>
+        <button class="btn btn-drone" id="btn-drone-toggle" style="margin-left: 6px; padding: 2px 6px; font-size: 0.75em;" onclick="socket.emit('toggle_drones')">Desplegar</button>
+      </div>
     </div>
 
     <!-- Navegación Stargates -->
@@ -104,19 +109,20 @@
       <button class="nav-tab active" onclick="switchStationTab('trade')">Comercio Local</button>
       <button class="nav-tab" onclick="switchStationTab('market')">Bolsa Global</button>
       <button class="nav-tab" onclick="switchStationTab('shipyard')">Astillero</button>
+      <button class="nav-tab" onclick="switchStationTab('drones')">Bahía Drones</button>
       <button class="nav-tab" onclick="switchStationTab('missions')">Misiones PvE</button>
       <button class="nav-tab" onclick="switchStationTab('skills')">Habilidades</button>
       <button class="nav-tab" onclick="switchStationTab('industry')">Industria</button>
     </div>
 
-    <!-- Pestaña 1: Comercio Asimétrico Local -->
+    <!-- Comercio Asimétrico Local -->
     <div class="box tab-content" id="tab-trade-content">
       <b style="color:#e3b341;">LOGÍSTICA REGIONAL:</b><br>
       <span id="station-rate-info">Cotización de menas: 20 ISK/m³</span><br>
       <button class="btn btn-trade" style="margin-top:6px;" onclick="socket.emit('sell_ore_station')">Descargar y Vender Todo el Mineral</button>
     </div>
 
-    <!-- Pestaña 2: Bolsa de Jugadores -->
+    <!-- Bolsa de Jugadores -->
     <div class="box tab-content" id="tab-market-content" style="display: none;">
       <b style="color:#58a6ff;">MERCADO LIBRE ENTRE JUGADORES</b>
       <div style="margin: 6px 0; font-size: 0.82em; background: #010409; padding: 6px; border: 1px dashed #30363d;">
@@ -131,26 +137,45 @@
       </table>
     </div>
 
-    <!-- Pestaña 3: Astillero -->
+    <!-- Astillero -->
     <div class="box tab-content" id="tab-shipyard-content" style="display: none;">
       <b style="color:#388bfd;">ASTILLERO ESPACIAL</b>
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
         <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Fragata 'Rifter'</b><br>30 m³ | 100 HP<br><span style="color:#7ee787;">Gratis</span><br>
+          <b>Fragata 'Rifter'</b><br>30 m³ | 1 Dron | 100 HP<br><span style="color:#7ee787;">Gratis</span><br>
           <button class="btn btn-ship" onclick="buyShip('frigate')">Abordar</button>
         </div>
         <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Carguero 'Mammoth'</b><br>250 m³ | 180 HP<br><span style="color:#e3b341;">500 ISK</span><br>
+          <b>Carguero 'Mammoth'</b><br>250 m³ | 0 Drones | 180 HP<br><span style="color:#e3b341;">500 ISK</span><br>
           <button class="btn btn-ship" onclick="buyShip('freighter')">Comprar</button>
         </div>
         <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Crucero 'Cerberus'</b><br>60 m³ | 150 HP (+20 dmg)<br><span style="color:#e3b341;">1,200 ISK</span><br>
+          <b>Crucero 'Cerberus'</b><br>60 m³ | 3 Drones | 150 HP (+20 dmg)<br><span style="color:#e3b341;">1,200 ISK</span><br>
           <button class="btn btn-ship" onclick="buyShip('cruiser')">Comprar</button>
         </div>
       </div>
     </div>
 
-    <!-- Pestaña 4: Misiones PvE -->
+    <!-- Taller de Drones -->
+    <div class="box tab-content" id="tab-drones-content" style="display: none;">
+      <b style="color:#7ee787;">FÁBRICA DE DRONES AUTÓNOMOS</b>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
+        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
+          <b>Dron de Combate 'Hornet'</b><br>
+          Inflige 12 DPS por turno en Nullsec/PvE.<br>
+          <span style="color:#e3b341;">150 ISK</span><br>
+          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'combat_drone')">Equipar Dron de Combate</button>
+        </div>
+        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
+          <b>Dron Minero 'Excavator'</b><br>
+          Extrae 4 m³ de mineral cada 5s en cinturón.<br>
+          <span style="color:#e3b341;">120 ISK</span><br>
+          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'mining_drone')">Equipar Dron Minero</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Misiones PvE -->
     <div class="box tab-content" id="tab-missions-content" style="display: none;">
       <b style="color:#ff7b72;">CONTRATOS DE CAZARRECOMPENSAS</b>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
@@ -165,7 +190,7 @@
       </div>
     </div>
 
-    <!-- Pestaña 5: Habilidades -->
+    <!-- Habilidades -->
     <div class="box tab-content" id="tab-skills-content" style="display: none;">
       <div style="display:flex; justify-content:space-between; border-bottom:1px solid #21262d; padding-bottom:4px;">
         <b style="color:#58a6ff;">NEURO-ENLACE</b>
@@ -174,7 +199,7 @@
       <div id="skills-list" style="margin-top:6px;"></div>
     </div>
 
-    <!-- Pestaña 6: Industria -->
+    <!-- Industria -->
     <div class="box tab-content" id="tab-industry-content" style="display: none;">
       <b style="color:#f0883e;">LÍNEAS DE MONTAJE</b>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
@@ -216,7 +241,8 @@
   const SKILL_CATALOG = [
     { key: 'gunnery', name: 'Balística Espacial', desc: '+10% daño por nivel' },
     { key: 'armor_upgrade', name: 'Gestión de Blindaje', desc: '+15 HP casco por nivel' },
-    { key: 'mining_efficiency', name: 'Extracción Minera', desc: '+2 m³ menas por nivel' }
+    { key: 'mining_efficiency', name: 'Extracción Minera', desc: '+2 m³ menas por nivel' },
+    { key: 'drone_interfacing', name: 'Interfaz de Drones', desc: '+10% rendimiento de drones' }
   ];
 
   function doLogin() {
@@ -306,6 +332,15 @@
     document.getElementById('my-ore').innerText = me.ore;
     document.getElementById('my-cargo-max').innerText = me.cargoMax || 30;
 
+    // Drones UI
+    const totalDrones = (me.drones?.combat || 0) + (me.drones?.mining || 0);
+    document.getElementById('drone-count').innerText = totalDrones;
+    document.getElementById('drone-cap').innerText = me.droneCapacity || 0;
+    document.getElementById('drone-desc').innerText = `Combate: ${me.drones?.combat || 0} | Mineros: ${me.drones?.mining || 0}`;
+    const btnToggle = document.getElementById('btn-drone-toggle');
+    btnToggle.innerText = me.dronesDeployed ? "Retirar Drones" : "Desplegar Drones";
+    btnToggle.style.color = me.dronesDeployed ? "#ff7b72" : "#7ee787";
+
     document.getElementById('bar-shield').style.width = me.shield + '%';
     document.getElementById('bar-armor').style.width = Math.round((me.armor / (me.maxArmor || 100)) * 100) + '%';
     document.getElementById('bar-cap').style.width = me.cap + '%';
@@ -380,7 +415,8 @@
       wrecksBox.style.display = 'none';
       actionsBox.innerHTML = `
         <b style="color:#56d364;">CINTURÓN DE EXTRACCIÓN (Asteroide: ${currentSec.asteroidHp}%):</b><br>
-        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser Minero</button>
+        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser Manual</button>
+        <span style="font-size:0.8em; margin-left:8px; color:#7ee787;">(Tus drones mineros extraen automáticamente si están desplegados)</span>
       `;
     } else if (me.sector === 'nullsec') {
       stationInterface.style.display = 'none';

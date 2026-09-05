@@ -516,9 +516,13 @@ function handleDestruction(victim, killer) {
 }
 
 io.on('connection', (socket) => {
-  socket.on('pilot_login', async ({ name, password }) => {
-    const cleanName = (name || '').trim().substring(0, 14);
-    const cleanPass = (password || '').trim();
+  socket.on('pilot_login', async (data) => {
+    // Soporta tanto si llega como objeto {name, password} o como texto antiguo
+    const nameInput = typeof data === 'object' ? data.name : data;
+    const passInput = typeof data === 'object' ? data.password : 'default_pass';
+
+    const cleanName = (nameInput || '').trim().substring(0, 14);
+    const cleanPass = (passInput || '').trim();
 
     if (!cleanName || !cleanPass) {
       socket.emit('login_error', "Debes ingresar tu nombre de piloto y contraseña.");

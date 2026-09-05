@@ -903,12 +903,12 @@
         <button class="btn" onclick="socket.emit('repair')">Reparar Casco (50 ISK)</button>
         <button class="btn" onclick="setCorporation()">Gestionar Alianza / Corp</button>
       `;
-    } else if (me.sector === 'mining') {
+    } else if (currentSec.type === 'mining') {
       stationInterface.style.display = 'none';
       actionsBox.innerHTML = `
-        <b style="color:var(--hud-green);">CINTURÓN DE EXTRACCIÓN (Asteroide: ${currentSec.asteroidHp}%):</b><br>
+        <b style="color:var(--hud-green);">CINTURÓN DE EXTRACCIÓN [${currentSec.name}] (Asteroide: ${currentSec.asteroidHp}%):</b><br>
         <button class="btn btn-act" onclick="socket.emit('mine_cycle')">⚡ Disparar Láser de Minería</button>
-        <span style="font-size:0.8em; margin-left:8px; color:var(--hud-green);">(Drones extraen en paralelo si están desplegados)</span>
+        <span style="font-size:0.8em; margin-left:8px; color:var(--hud-green);">(Drones mineros extraen en paralelo si están desplegados)</span>
       `;
 
       if (currentSec.wrecks && currentSec.wrecks.length > 0) {
@@ -923,6 +923,7 @@
       } else {
         wrecksBox.style.display = 'none';
       }
+    }
     } else if (me.sector === 'nullsec') {
       stationInterface.style.display = 'none';
       const sov = currentSec.sovereignty;

@@ -19,7 +19,6 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log(">>> [BD EN LA NUBE]: Conexión exitosa a MongoDB Atlas <<<"))
   .catch(err => console.error("Error al conectar a MongoDB:", err.message));
 
-// Esquema de Piloto con campo de contraseña encriptada
 const PilotSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
@@ -129,11 +128,19 @@ async function syncPilotToCloud(p) {
   }
 }
 
-// Bucle maestro (1 segundo)
+// Bucle maestro del servidor
 setInterval(async () => {
   const now = Date.now();
 
-  // 1. Alineación de Curvatura (Warp Spool-up)
+  // 1. Regeneración continua del reactor (Capacitor) en toda la galaxia
+  for (let id in universe.players) {
+    const p = universe.players[id];
+    if (p.cap < 100) {
+      p.cap = Math.min(100, p.cap + 5);
+    }
+  }
+
+  // 2. Alineación de Curvatura (Warp Spool-up)
   for (let id in universe.players) {
     const p = universe.players[id];
     if (p.spoolingWarp) {
@@ -155,7 +162,7 @@ setInterval(async () => {
     }
   }
 
-  // 2. Habilidades
+  // 3. Entrenamiento de Habilidades
   for (let id in universe.players) {
     const p = universe.players[id];
     if (p.training && now >= p.training.finishAt) {
@@ -177,7 +184,7 @@ setInterval(async () => {
     }
   }
 
-  // 3. Drones mineros pasivos
+  // 4. Drones mineros pasivos (cada 5s)
   if (Math.floor(now / 1000) % 5 === 0) {
     for (let id in universe.players) {
       const p = universe.players[id];
@@ -194,14 +201,14 @@ setInterval(async () => {
           universe.sectors.mining.asteroidHp = Math.max(0, universe.sectors.mining.asteroidHp - 5);
           const sock = io.sockets.sockets.get(p.id);
           if (sock) {
-            sock.emit('chat_broadcast', { channel: 'local', sender: 'DRONES', text: `Drones mineros cargaron +${taken} m³ de mena.` });
+            sock.emit('chat_broadcast', { channel: 'local', sender: 'DRONES', text: `Drones mineros recolectaron +${taken} m³ de mena.` });
           }
         }
       }
     }
   }
 
-  // 4. Combate PvP Nullsec
+  // 5. Combate PvP en Nullsec
   const nullsecCombatants = Object.values(universe.players).filter(p => p.sector === 'nullsec' && p.armor > 0);
   if (nullsecCombatants.length >= 2) {
     universe.sectors.nullsec.timer--;
@@ -214,7 +221,7 @@ setInterval(async () => {
     universe.sectors.nullsec.timer = 20;
   }
 
-  // 5. Combate PvE
+  // 6. Combate PvE
   for (let pilotName in universe.pveEncounters) {
     const enc = universe.pveEncounters[pilotName];
     const player = Object.values(universe.players).find(p => p.name === pilotName && p.sector === 'pve');
@@ -228,7 +235,7 @@ setInterval(async () => {
     }
   }
 
-  // 6. Industria
+  // 7. Industria
   cachedJobs.forEach(async (job) => {
     if (!job.completed && now >= job.completesAt) {
       job.completed = true;
@@ -239,19 +246,9 @@ setInterval(async () => {
         if (sock) sock.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `¡[${job.blueprintName}] listo para entrega!` });
       }
     }
-
-    // 7. Regeneración continua del reactor (Capacitor) en toda la galaxia
-  for (let id in universe.players) {
-    const p = universe.players[id];
-    if (p.cap < 100) {
-      // Regenera 5 Gj por segundo (o más según la nave/habilidad)
-      p.cap = Math.min(100, p.cap + 5);
-    }
-  }
-    
   });
 
-  // Guardado periódico
+  // Guardado continuo
   for (let id in universe.players) {
     syncPilotToCloud(universe.players[id]);
   }
@@ -268,10 +265,9 @@ setInterval(async () => {
 }, 1000);
 
 function resolvePveTurn(player, enc) {
-  player.cap = Math.min(100, player.cap + 15);
   let logs = [];
-
   let totalDmg = 0;
+
   if (player.order === 'attack' && player.cap >= 25) {
     player.cap -= 25;
     let shipBonus = SHIP_TYPES[player.shipKey]?.dmgBonus || 0;
@@ -294,6 +290,8 @@ function resolvePveTurn(player, enc) {
   if (totalDmg > 0) {
     enc.npcArmor = Math.max(0, enc.npcArmor - totalDmg);
     logs.push(`Disparo efectivo contra ${enc.targetName}: -${totalDmg} daño.`);
+    const sock = io.sockets.sockets.get(player.id);
+    if (sock) sock.emit('action_fx', { type: 'laser_fire', damage: totalDmg, target: 'enemy' });
   }
   player.order = 'none';
 
@@ -325,6 +323,8 @@ function resolvePveTurn(player, enc) {
   if (player.order === 'defense') npcDmg = Math.round(npcDmg * 0.6);
   applyDamage(player, npcDmg);
   logs.push(`${enc.targetName} respondió fuego (-${npcDmg} daño).`);
+  const sock = io.sockets.sockets.get(player.id);
+  if (sock) sock.emit('action_fx', { type: 'under_fire', damage: npcDmg, target: 'player' });
 
   if (player.armor <= 0) {
     delete universe.pveEncounters[player.name];
@@ -337,7 +337,6 @@ function resolvePveTurn(player, enc) {
     player.dronesDeployed = false;
     syncPilotToCloud(player);
 
-    const sock = io.sockets.sockets.get(player.id);
     if (sock) {
       sock.leave('pve');
       sock.join('station');
@@ -346,13 +345,11 @@ function resolvePveTurn(player, enc) {
     return;
   }
 
-  const sock = io.sockets.sockets.get(player.id);
   if (sock) sock.emit('combat_log', logs);
 }
 
 function resolveCombat(combatants) {
   let logs = [];
-  combatants.forEach(p => p.cap = Math.min(100, p.cap + 15));
 
   combatants.forEach(attacker => {
     if (attacker.armor <= 0) return;
@@ -386,7 +383,12 @@ function resolveCombat(combatants) {
 
     if (totalDmg > 0) {
       applyDamage(target, totalDmg);
-      logs.push(`[${attacker.corp}] ${attacker.name} impactó a [${target.corp}] ${target.name} (-${totalDmg} daño total).`);
+      logs.push(`[${attacker.corp}] ${attacker.name} impactó a [${target.corp}] ${target.name} (-${totalDmg} daño).`);
+      const targetSock = io.sockets.sockets.get(target.id);
+      if (targetSock) targetSock.emit('action_fx', { type: 'under_fire', damage: totalDmg, target: 'player' });
+      const attSock = io.sockets.sockets.get(attacker.id);
+      if (attSock) attSock.emit('action_fx', { type: 'laser_fire', damage: totalDmg, target: 'enemy' });
+
       if (target.armor <= 0) handleDestruction(target, attacker);
     }
     attacker.order = 'none';
@@ -447,7 +449,6 @@ function handleDestruction(victim, killer) {
 }
 
 io.on('connection', (socket) => {
-  // AUTENTICACIÓN SEGURA CON BCRYPT
   socket.on('pilot_login', async ({ name, password }) => {
     const cleanName = (name || '').trim().substring(0, 14);
     const cleanPass = (password || '').trim();
@@ -461,7 +462,6 @@ io.on('connection', (socket) => {
       let saved = await Pilot.findOne({ name: cleanName });
 
       if (!saved) {
-        // Registro de piloto nuevo: hashear contraseña con 10 rondas de salt
         const hash = await bcrypt.hash(cleanPass, 10);
         saved = await Pilot.create({
           name: cleanName,
@@ -475,15 +475,12 @@ io.on('connection', (socket) => {
           shield: 100,
           drones: { combat: 0, mining: 0 }
         });
-        console.log(`[AUTH]: Nuevo piloto registrado con clave encriptada: ${cleanName}`);
       } else {
-        // Piloto existente: verificar coincidencia con bcrypt
         const valid = await bcrypt.compare(cleanPass, saved.passwordHash);
         if (!valid) {
           socket.emit('login_error', "Contraseña incorrecta. Acceso denegado a la nave.");
           return;
         }
-        console.log(`[AUTH]: Acceso verificado para: ${cleanName}`);
       }
 
       const ship = SHIP_TYPES[saved.shipKey] || SHIP_TYPES.frigate;
@@ -568,6 +565,8 @@ io.on('connection', (socket) => {
     const extracted = Math.min(shipCap - currentTotalCargo, 3 + miningLvl);
     p.bistrimite = (p.bistrimite || 0) + extracted;
 
+    socket.emit('action_fx', { type: 'mining_laser', yield: extracted, mineral: 'Bistrimita' });
+
     io.to('nullsec').emit('chat_broadcast', {
       channel: 'local',
       sender: 'RADAR',
@@ -577,12 +576,31 @@ io.on('connection', (socket) => {
     if (Math.random() < 0.25) {
       p.cap = Math.max(0, p.cap - 25);
       applyDamage(p, 15);
+      socket.emit('action_fx', { type: 'under_fire', damage: 15, target: 'player' });
       socket.emit('chat_broadcast', {
         channel: 'local',
         sender: 'ALERTA NAVE',
         text: `¡DESCARGA VOLÁTIL! La veta colapsó (-25 capacitor, -15 blindaje).`
       });
       if (p.armor <= 0) handleDestruction(p, { name: "Anomalía Volátil", corp: "Entorno" });
+    }
+  });
+
+  socket.on('mine_cycle', () => {
+    const p = universe.players[socket.id];
+    if (p && p.sector === 'mining') {
+      const currentCargo = (p.ore || 0) + (p.bistrimite || 0);
+      const shipCap = p.cargoMax || 30;
+      if (currentCargo >= shipCap) {
+        socket.emit('chat_broadcast', { channel: 'local', sender: 'BODEGA', text: "Bodega saturada." });
+        return;
+      }
+      const miningLvl = p.skills?.mining_efficiency || 0;
+      const extracted = Math.min(shipCap - currentCargo, 5 + (miningLvl * 2));
+      p.ore += extracted;
+      universe.sectors.mining.asteroidHp = Math.max(0, universe.sectors.mining.asteroidHp - 10);
+      if (universe.sectors.mining.asteroidHp <= 0) universe.sectors.mining.asteroidHp = 100;
+      socket.emit('action_fx', { type: 'mining_laser', yield: extracted, mineral: 'Veldspar' });
     }
   });
 
@@ -828,23 +846,6 @@ io.on('connection', (socket) => {
     syncPilotToCloud(p);
   });
 
-  socket.on('mine_cycle', () => {
-    const p = universe.players[socket.id];
-    if (p && p.sector === 'mining') {
-      const currentCargo = (p.ore || 0) + (p.bistrimite || 0);
-      const shipCap = p.cargoMax || 30;
-      if (currentCargo >= shipCap) {
-        socket.emit('chat_broadcast', { channel: 'local', sender: 'BODEGA', text: "Bodega saturada." });
-        return;
-      }
-      const miningLvl = p.skills?.mining_efficiency || 0;
-      const extracted = Math.min(shipCap - currentCargo, 5 + (miningLvl * 2));
-      p.ore += extracted;
-      universe.sectors.mining.asteroidHp = Math.max(0, universe.sectors.mining.asteroidHp - 10);
-      if (universe.sectors.mining.asteroidHp <= 0) universe.sectors.mining.asteroidHp = 100;
-    }
-  });
-
   socket.on('set_order', (order) => {
     if (universe.players[socket.id]) {
       universe.players[socket.id].order = order;
@@ -912,5 +913,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Servidor MMO con Autenticación Segura corriendo en puerto ${PORT}`);
+  console.log(`Servidor MMO Maestro corriendo en puerto ${PORT}`);
 });

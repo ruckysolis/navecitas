@@ -150,18 +150,22 @@ setInterval(async () => {
     }
   }
 
-  // 3. Sistema de Emboscadas Piratas Aleatorias en Mining y Nullsec
-  ['mining', 'nullsec'].forEach(secKey => {
+  // 3. Sistema de Emboscadas Piratas en sectores mineros y de combate
+  for (let secKey in universe.sectors) {
     const sec = universe.sectors[secKey];
+    if (sec.type !== 'mining' && sec.type !== 'combat') continue;
+
+    // Asegurar que el sector tenga la propiedad inicializada
+    if (!sec.pirateAmbush) sec.pirateAmbush = null;
+
     const pilotsInSec = Object.values(universe.players).filter(p => p.sector === secKey && p.armor > 0);
 
     if (pilotsInSec.length > 0) {
       if (!sec.pirateAmbush) {
-        // 5% probabilidad por segundo de iniciar una incursión si hay mineros
         if (Math.random() < 0.05) {
           sec.pirateAmbush = {
             targetName: "Corsario Bloodhound de la Flota Roja",
-            countdown: 10, // 10 segundos para saltar o prepararse
+            countdown: 10,
             active: false,
             hp: 90,
             dmg: 25
@@ -169,7 +173,7 @@ setInterval(async () => {
           io.to(secKey).emit('chat_broadcast', {
             channel: 'local',
             sender: 'RADAR DE PROXIMIDAD',
-            text: `¡SALTO HOSTIL DETECTADO! Una nave pirata saldrá de curvatura en 10 segundos. ¡Alínea motores para escapar o prepara defensas!`
+            text: `¡SALTO HOSTIL DETECTADO! Una nave pirata saldrá de curvatura en 10 segundos. ¡Alínea motores o prepárate!`
           });
         }
       } else {
@@ -184,7 +188,6 @@ setInterval(async () => {
             });
           }
         } else {
-          // Pirata activo atacando a un piloto al azar cada 3 segundos
           if (Math.floor(now / 1000) % 3 === 0 && pilotsInSec.length > 0) {
             const victim = pilotsInSec[Math.floor(Math.random() * pilotsInSec.length)];
             applyDamage(victim, sec.pirateAmbush.dmg);
@@ -202,7 +205,7 @@ setInterval(async () => {
     } else {
       sec.pirateAmbush = null;
     }
-  });
+  }
 
   // 4. Warp Spool-up (Alineación)
   for (let id in universe.players) {

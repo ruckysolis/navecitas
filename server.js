@@ -12,16 +12,39 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const DB_FILE = path.join(__dirname, 'pilots.json');
 
+// Catálogo de planos industriales disponibles en la estación
+const BLUEPRINTS = {
+  'laser_t2': {
+    name: "Láser de Pulso T2",
+    type: 'module',
+    oreCost: 25,
+    fee: 100,
+    buildTimeSec: 30, // 30 segundos
+    statDesc: "+20 daño primario"
+  },
+  'heavy_cruiser': {
+    name: "Crucero de Asalto 'Cerberus'",
+    type: 'ship',
+    oreCost: 60,
+    fee: 300,
+    buildTimeSec: 60, // 60 segundos
+    statDesc: "+50% blindaje base (150 HP)"
+  }
+};
+
 function loadDatabase() {
-  if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ pilots: {}, market: [] }));
+  if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify({ pilots: {}, market: [], industryJobs: [] }));
+  }
   try {
     const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     return {
-      pilots: data.pilots || data, // compatibilidad hacia atrás
-      market: data.market || []
+      pilots: data.pilots || data,
+      market: data.market || [],
+      industryJobs: data.industryJobs || []
     };
   } catch (e) {
-    return { pilots: {}, market: [] };
+    return { pilots: {}, market: [], industryJobs: [] };
   }
 }
 
@@ -31,7 +54,8 @@ function saveDatabase(data) {
 
 let dbData = loadDatabase();
 let dbPilots = dbData.pilots;
-let marketOrders = dbData.market; // Órdenes activas en el mercado
+let marketOrders = dbData.market;
+let industryJobs = dbData.industryJobs; // Trabajos de construcción activos
 
 const universe = {
   players: {},
@@ -64,7 +88,26 @@ setInterval(() => {
     universe.sectors.nullsec.timer = 20;
   }
 
-  // Guardar estado de pilotos
+  // Comprobar finalización de trabajos industriales
+  const now = Date.now();
+  industryJobs.forEach(job => {
+    if (!job.completed && now >= job.completesAt) {
+      job.completed = true;
+      const pilotSocket = Object.values(universe.players).find(p => p.name === job.pilot);
+      if (pilotSocket) {
+        const sock = io.sockets.sockets.get(pilotSocket.id);
+        if (sock) {
+          sock.emit('chat_broadcast', {
+            channel: 'local',
+            sender: 'INDUSTRIA',
+            text: `¡Trabajo finalizado! Tu [${job.blueprintName}] está listo para entrega en el Hangar.`
+          });
+        }
+      }
+    }
+  });
+
+  // Guardar datos persistentes
   for (let id in universe.players) {
     const p = universe.players[id];
     if (dbPilots[p.name]) {
@@ -73,14 +116,17 @@ setInterval(() => {
       dbPilots[p.name].armor = p.armor;
       dbPilots[p.name].shield = p.shield;
       dbPilots[p.name].corp = p.corp;
+      dbPilots[p.name].maxArmor = p.maxArmor || 100;
+      dbPilots[p.name].weaponBonus = p.weaponBonus || 0;
     }
   }
-  saveDatabase({ pilots: dbPilots, market: marketOrders });
+  saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
 
   io.emit('universe_tick', {
     sectors: universe.sectors,
     players: universe.players,
-    market: marketOrders
+    market: marketOrders,
+    industryJobs: industryJobs
   });
 }, 1000);
 
@@ -95,9 +141,10 @@ function resolveCombat(combatants) {
 
     if (attacker.order === 'attack' && attacker.cap >= 25) {
       attacker.cap -= 25;
-      let dmg = target.order === 'defense' ? 15 : 35;
+      let baseDmg = target.order === 'defense' ? 15 : 35;
+      let dmg = baseDmg + (attacker.weaponBonus || 0);
       applyDamage(target, dmg);
-      logs.push(`[${attacker.corp}] ${attacker.name} disparó a [${target.corp}] ${target.name} (-${dmg} daño).`);
+      logs.push(`[${attacker.corp}] ${attacker.name} abrió fuego sobre [${target.corp}] ${target.name} (-${dmg} daño).`);
 
       if (target.armor <= 0) {
         handleDestruction(target, attacker);
@@ -105,7 +152,7 @@ function resolveCombat(combatants) {
     } else if (attacker.order === 'defense' && attacker.cap >= 20) {
       attacker.cap -= 20;
       attacker.shield = Math.min(100, attacker.shield + 20);
-      logs.push(`${attacker.name} reforzó defensas.`);
+      logs.push(`${attacker.name} regeneró escudos.`);
     }
     attacker.order = 'none';
   });
@@ -140,7 +187,7 @@ function handleDestruction(victim, killer) {
   io.emit('chat_broadcast', {
     channel: 'galaxy',
     sender: 'BAJA CONFIRMADA',
-    text: `Flota de [${killer.corp}] pulverizó la fragata de [${victim.corp}] ${victim.name} en Nullsec.`
+    text: `Flota de [${killer.corp}] aniquiló la nave de [${victim.corp}] ${victim.name} en Nullsec.`
   });
 
   victim.ore = 0;
@@ -153,7 +200,7 @@ function handleDestruction(victim, killer) {
   if (victimSocket) {
     victimSocket.leave('nullsec');
     victimSocket.join('station');
-    victimSocket.emit('ship_destroyed', "Nave destruida. Cápsula de escape transferida a la Estación Central.");
+    victimSocket.emit('ship_destroyed', "Nave pulverizada. Cápsula de escape transferida a la Estación.");
   }
 }
 
@@ -168,9 +215,11 @@ io.on('connection', (socket) => {
         wallet: 300,
         ore: 10,
         armor: 100,
-        shield: 100
+        maxArmor: 100,
+        shield: 100,
+        weaponBonus: 0
       };
-      saveDatabase({ pilots: dbPilots, market: marketOrders });
+      saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
     }
 
     const saved = dbPilots[cleanName];
@@ -182,9 +231,11 @@ io.on('connection', (socket) => {
       sector: 'station',
       shield: saved.shield,
       armor: saved.armor,
+      maxArmor: saved.maxArmor || 100,
       cap: 100,
       ore: saved.ore,
       wallet: saved.wallet,
+      weaponBonus: saved.weaponBonus || 0,
       order: 'none'
     };
 
@@ -199,12 +250,75 @@ io.on('connection', (socket) => {
     const tag = corpTag.trim().toUpperCase().substring(0, 5) || "CORP";
     p.corp = tag;
     dbPilots[p.name].corp = tag;
-    saveDatabase({ pilots: dbPilots, market: marketOrders });
+    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
     io.emit('chat_broadcast', { channel: 'galaxy', sender: 'REGISTRO', text: `${p.name} ahora vuela para [${tag}].` });
   });
 
-  // --- SISTEMA DE MERCADO ABIERTO ---
-  // Publicar orden de venta
+  // --- INDUSTRIA: INICIAR TRABAJO ---
+  socket.on('start_industry_job', (bpKey) => {
+    const p = universe.players[socket.id];
+    if (!p || p.sector !== 'station') return;
+
+    const bp = BLUEPRINTS[bpKey];
+    if (!bp) return;
+
+    if (p.wallet < bp.fee) {
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `Créditos insuficientes para la tasa de ensamblaje (${bp.fee} ISK).` });
+      return;
+    }
+    if (p.ore < bp.oreCost) {
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `Mineral insuficiente en bodega (${p.ore}/${bp.oreCost} m³).` });
+      return;
+    }
+
+    // Cobrar tasa y materiales
+    p.wallet -= bp.fee;
+    p.ore -= bp.oreCost;
+
+    const job = {
+      id: Date.now(),
+      pilot: p.name,
+      bpKey: bpKey,
+      blueprintName: bp.name,
+      completesAt: Date.now() + (bp.buildTimeSec * 1000),
+      completed: false
+    };
+
+    industryJobs.push(job);
+    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+
+    socket.emit('chat_broadcast', {
+      channel: 'local',
+      sender: 'INDUSTRIA',
+      text: `Trabajo de manufactura iniciado: [${bp.name}]. Tiempo estimado: ${bp.buildTimeSec}s.`
+    });
+  });
+
+  // --- INDUSTRIA: ENTREGAR TRABAJO TERMINADO ---
+  socket.on('claim_industry_job', (jobId) => {
+    const p = universe.players[socket.id];
+    if (!p || p.sector !== 'station') return;
+
+    const idx = industryJobs.findIndex(j => j.id === jobId && j.pilot === p.name && j.completed);
+    if (idx === -1) return;
+
+    const job = industryJobs[idx];
+    const bp = BLUEPRINTS[job.bpKey];
+
+    if (bp.type === 'module') {
+      p.weaponBonus = Math.max(p.weaponBonus, 20);
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `¡[${bp.name}] equipado con éxito! (+20 daño primario permanente).` });
+    } else if (bp.type === 'ship') {
+      p.maxArmor = 150;
+      p.armor = 150;
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `¡Nave entregada! Has abordado el [${bp.name}] (Blindaje ampliado a 150 HP).` });
+    }
+
+    industryJobs.splice(idx, 1);
+    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+  });
+
+  // Mercado libre
   socket.on('create_sell_order', ({ amount, pricePerUnit }) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'station') return;
@@ -213,10 +327,7 @@ io.on('connection', (socket) => {
     pricePerUnit = parseInt(pricePerUnit);
 
     if (isNaN(amount) || amount <= 0 || isNaN(pricePerUnit) || pricePerUnit <= 0) return;
-    if (p.ore < amount) {
-      socket.emit('chat_broadcast', { channel: 'local', sender: 'MERCADO', text: "No tienes suficiente mineral en bodega para crear esta orden." });
-      return;
-    }
+    if (p.ore < amount) return;
 
     p.ore -= amount;
     const order = {
@@ -227,16 +338,15 @@ io.on('connection', (socket) => {
       pricePerUnit: pricePerUnit
     };
     marketOrders.push(order);
-    saveDatabase({ pilots: dbPilots, market: marketOrders });
+    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
 
     io.emit('chat_broadcast', {
       channel: 'galaxy',
       sender: 'MERCADO',
-      text: `NUEVA OFERTA: ${p.name} puso a la venta ${amount} m³ de mineral a ${pricePerUnit} ISK/u.`
+      text: `OFERTA: ${p.name} puso a la venta ${amount} m³ de mena a ${pricePerUnit} ISK/u.`
     });
   });
 
-  // Comprar orden del mercado
   socket.on('buy_market_order', (orderId) => {
     const buyer = universe.players[socket.id];
     if (!buyer || buyer.sector !== 'station') return;
@@ -247,44 +357,28 @@ io.on('connection', (socket) => {
     const order = marketOrders[idx];
     const totalCost = order.amount * order.pricePerUnit;
 
-    if (buyer.wallet < totalCost) {
-      socket.emit('chat_broadcast', { channel: 'local', sender: 'MERCADO', text: "Fondos insuficientes para comprar este lote de mineral." });
-      return;
-    }
+    if (buyer.wallet < totalCost) return;
 
-    // Cobrar al comprador y entregar mineral
     buyer.wallet -= totalCost;
     buyer.ore += order.amount;
 
-    // Calcular impuesto corporativo (5% para la alianza que controla Nullsec)
     let tax = 0;
     const sovOwner = universe.sectors.nullsec.sovereignty.ownerCorp;
-    if (sovOwner !== "Ninguna") {
-      tax = Math.round(totalCost * 0.05);
-    }
-    const netSellerEarned = totalCost - tax;
+    if (sovOwner !== "Ninguna") tax = Math.round(totalCost * 0.05);
+    const net = totalCost - tax;
 
-    // Pagar al vendedor (esté o no conectado en esta sesión)
-    if (dbPilots[order.seller]) {
-      dbPilots[order.seller].wallet += netSellerEarned;
-    }
-    // Si está conectado en vivo, actualizar su objeto en memoria
-    const sellerPlayer = Object.values(universe.players).find(p => p.name === order.seller);
-    if (sellerPlayer) {
-      sellerPlayer.wallet += netSellerEarned;
-    }
+    if (dbPilots[order.seller]) dbPilots[order.seller].wallet += net;
+    const sellerOnline = Object.values(universe.players).find(p => p.name === order.seller);
+    if (sellerOnline) sellerOnline.wallet += net;
 
-    // Repartir dividendo de impuesto a miembros de la corp soberana en línea
     if (tax > 0) {
       Object.values(universe.players).forEach(p => {
-        if (p.corp === sovOwner) {
-          p.wallet += tax;
-        }
+        if (p.corp === sovOwner) p.wallet += tax;
       });
     }
 
     marketOrders.splice(idx, 1);
-    saveDatabase({ pilots: dbPilots, market: marketOrders });
+    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
 
     io.emit('chat_broadcast', {
       channel: 'galaxy',
@@ -293,18 +387,15 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Cancelar orden propia
   socket.on('cancel_market_order', (orderId) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'station') return;
 
     const idx = marketOrders.findIndex(o => o.id === orderId && o.seller === p.name);
     if (idx !== -1) {
-      const order = marketOrders[idx];
-      p.ore += order.amount;
+      p.ore += marketOrders[idx].amount;
       marketOrders.splice(idx, 1);
-      saveDatabase({ pilots: dbPilots, market: marketOrders });
-      socket.emit('chat_broadcast', { channel: 'local', sender: 'MERCADO', text: "Orden cancelada. Mineral devuelto a tu bodega." });
+      saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
     }
   });
 
@@ -318,9 +409,9 @@ io.on('connection', (socket) => {
       if (sov.progress >= 100) {
         sov.ownerCorp = p.corp;
         sov.progress = 100;
-        io.emit('chat_broadcast', { channel: 'galaxy', sender: 'SOBERANÍA', text: `¡[${p.corp}] ha capturado la Soberanía en Nullsec! Cobrará el 5% de impuestos de todo el mercado espacial.` });
+        io.emit('chat_broadcast', { channel: 'galaxy', sender: 'SOBERANÍA', text: `¡[${p.corp}] conquistó Nullsec! Recibirá 5% de impuestos de todo el mercado.` });
       } else {
-        io.to('nullsec').emit('chat_broadcast', { channel: 'local', sender: 'BALIZA', text: `[${p.corp}] reclamando soberanía (${sov.progress}%)...` });
+        io.to('nullsec').emit('chat_broadcast', { channel: 'local', sender: 'BALIZA', text: `[${p.corp}] capturando baliza (${sov.progress}%)...` });
       }
     }
   });
@@ -328,9 +419,7 @@ io.on('connection', (socket) => {
   socket.on('send_chat', ({ channel, text }) => {
     const p = universe.players[socket.id];
     if (!p || !text.trim()) return;
-    const ch = channel === 'galaxy' ? 'galaxy' : 'local';
-    const room = ch === 'galaxy' ? null : p.sector;
-
+    const room = channel === 'galaxy' ? null : p.sector;
     if (room) {
       io.to(room).emit('chat_broadcast', { channel: 'local', sender: `[${p.corp}] ${p.name}`, text: text.trim() });
     } else {
@@ -389,7 +478,7 @@ io.on('connection', (socket) => {
     const p = universe.players[socket.id];
     if (p && p.sector === 'station' && p.wallet >= 50) {
       p.wallet -= 50;
-      p.armor = 100;
+      p.armor = p.maxArmor || 100;
       p.shield = 100;
       socket.emit('chat_broadcast', { channel: 'local', sender: 'HANGAR', text: "Reparación completa." });
     }
@@ -402,5 +491,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Servidor MMO con mercado libre corriendo en puerto ${PORT}`);
+  console.log(`Servidor MMO con Industria activa en puerto ${PORT}`);
 });

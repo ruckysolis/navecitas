@@ -74,7 +74,7 @@ const universe = {
   players: {},
   sectors: {
     'station': { name: "Estación Central Jita", type: "station", npcBuyPrice: 20 },
-    'mining': { name: "Cinturón Veldspar-4", type: "mining", asteroidHp: 100 },
+    'mining': { name: "Cinturón Veldspar-4", type: "mining", asteroidHp: 100, pirateAmbush: null },
     'nullsec': { 
       name: "Sector Abisal X-99", 
       type: "combat", 
@@ -82,6 +82,8 @@ const universe = {
       round: 1, 
       wrecks: [],
       volatileField: { active: true, asteroidHp: 200 },
+      storm: { active: false, timer: 45 }, // Ciclo de tormenta cósmica
+      pirateAmbush: null,
       sovereignty: { ownerCorp: "Ninguna", progress: 0 }
     },
     'outpost': { name: "Outpost 73 (Frontera Outer Ring)", type: "station", npcBuyPrice: 55 }
@@ -128,19 +130,96 @@ async function syncPilotToCloud(p) {
   }
 }
 
-// Bucle maestro del servidor
+// Bucle maestro (1 segundo)
 setInterval(async () => {
   const now = Date.now();
 
-  // 1. Regeneración continua del reactor (Capacitor) en toda la galaxia
+  // 1. Regeneración continua de Capacitor
   for (let id in universe.players) {
     const p = universe.players[id];
-    if (p.cap < 100) {
-      p.cap = Math.min(100, p.cap + 5);
+    if (p.cap < 100) p.cap = Math.min(100, p.cap + 5);
+  }
+
+  // 2. Tormenta Cósmica en Nullsec (Ciclo de 45s calma / 45s tormenta)
+  const storm = universe.sectors.nullsec.storm;
+  storm.timer--;
+  if (storm.timer <= 0) {
+    storm.active = !storm.active;
+    storm.timer = 45;
+    const alertMsg = storm.active
+      ? "¡ALERTA CÓSMICA! Tormenta electromagnética activa en Nullsec: daño ambiental constante, pero la Bistrimita cotiza al DOBLE (240 ISK/m³)."
+      : "La tormenta electromagnética en Nullsec se ha disipado temporalmente.";
+    io.emit('chat_broadcast', { channel: 'galaxy', sender: 'ALERTA AMBIENTAL', text: alertMsg });
+  }
+
+  // Daño ambiental durante la tormenta a naves en Nullsec
+  if (storm.active) {
+    for (let id in universe.players) {
+      const p = universe.players[id];
+      if (p.sector === 'nullsec' && p.armor > 0) {
+        applyDamage(p, 5);
+        const sock = io.sockets.sockets.get(id);
+        if (sock) sock.emit('action_fx', { type: 'under_fire', damage: 5, target: 'player' });
+        if (p.armor <= 0) handleDestruction(p, { name: "Tormenta Cósmica", corp: "Anomalía" });
+      }
     }
   }
 
-  // 2. Alineación de Curvatura (Warp Spool-up)
+  // 3. Sistema de Emboscadas Piratas Aleatorias en Mining y Nullsec
+  ['mining', 'nullsec'].forEach(secKey => {
+    const sec = universe.sectors[secKey];
+    const pilotsInSec = Object.values(universe.players).filter(p => p.sector === secKey && p.armor > 0);
+
+    if (pilotsInSec.length > 0) {
+      if (!sec.pirateAmbush) {
+        // 5% probabilidad por segundo de iniciar una incursión si hay mineros
+        if (Math.random() < 0.05) {
+          sec.pirateAmbush = {
+            targetName: "Corsario Bloodhound de la Flota Roja",
+            countdown: 10, // 10 segundos para saltar o prepararse
+            active: false,
+            hp: 90,
+            dmg: 25
+          };
+          io.to(secKey).emit('chat_broadcast', {
+            channel: 'local',
+            sender: 'RADAR DE PROXIMIDAD',
+            text: `¡SALTO HOSTIL DETECTADO! Una nave pirata saldrá de curvatura en 10 segundos. ¡Alínea motores para escapar o prepara defensas!`
+          });
+        }
+      } else {
+        if (!sec.pirateAmbush.active) {
+          sec.pirateAmbush.countdown--;
+          if (sec.pirateAmbush.countdown <= 0) {
+            sec.pirateAmbush.active = true;
+            io.to(secKey).emit('chat_broadcast', {
+              channel: 'local',
+              sender: 'ALERTA DE COMBATE',
+              text: `¡${sec.pirateAmbush.targetName} ha entrado al sector y ha fijado armas!`
+            });
+          }
+        } else {
+          // Pirata activo atacando a un piloto al azar cada 3 segundos
+          if (Math.floor(now / 1000) % 3 === 0 && pilotsInSec.length > 0) {
+            const victim = pilotsInSec[Math.floor(Math.random() * pilotsInSec.length)];
+            applyDamage(victim, sec.pirateAmbush.dmg);
+            const sock = io.sockets.sockets.get(victim.id);
+            if (sock) sock.emit('action_fx', { type: 'under_fire', damage: sec.pirateAmbush.dmg, target: 'player' });
+            io.to(secKey).emit('chat_broadcast', {
+              channel: 'local',
+              sender: 'INCURSIÓN PIRATA',
+              text: `${sec.pirateAmbush.targetName} abrió fuego contra ${victim.name} (-${sec.pirateAmbush.dmg} daño).`
+            });
+            if (victim.armor <= 0) handleDestruction(victim, { name: sec.pirateAmbush.targetName, corp: "Piratas" });
+          }
+        }
+      }
+    } else {
+      sec.pirateAmbush = null;
+    }
+  });
+
+  // 4. Warp Spool-up (Alineación)
   for (let id in universe.players) {
     const p = universe.players[id];
     if (p.spoolingWarp) {
@@ -162,7 +241,7 @@ setInterval(async () => {
     }
   }
 
-  // 3. Entrenamiento de Habilidades
+  // 5. Entrenamiento de Habilidades
   for (let id in universe.players) {
     const p = universe.players[id];
     if (p.training && now >= p.training.finishAt) {
@@ -184,7 +263,7 @@ setInterval(async () => {
     }
   }
 
-  // 4. Drones mineros pasivos (cada 5s)
+  // 6. Drones mineros pasivos (cada 5s)
   if (Math.floor(now / 1000) % 5 === 0) {
     for (let id in universe.players) {
       const p = universe.players[id];
@@ -201,14 +280,14 @@ setInterval(async () => {
           universe.sectors.mining.asteroidHp = Math.max(0, universe.sectors.mining.asteroidHp - 5);
           const sock = io.sockets.sockets.get(p.id);
           if (sock) {
-            sock.emit('chat_broadcast', { channel: 'local', sender: 'DRONES', text: `Drones mineros recolectaron +${taken} m³ de mena.` });
+            sock.emit('chat_broadcast', { channel: 'local', sender: 'DRONES', text: `Drones mineros cargaron +${taken} m³ de mena.` });
           }
         }
       }
     }
   }
 
-  // 5. Combate PvP en Nullsec
+  // 7. Combate PvP en Nullsec
   const nullsecCombatants = Object.values(universe.players).filter(p => p.sector === 'nullsec' && p.armor > 0);
   if (nullsecCombatants.length >= 2) {
     universe.sectors.nullsec.timer--;
@@ -221,7 +300,7 @@ setInterval(async () => {
     universe.sectors.nullsec.timer = 20;
   }
 
-  // 6. Combate PvE
+  // 8. Combate PvE
   for (let pilotName in universe.pveEncounters) {
     const enc = universe.pveEncounters[pilotName];
     const player = Object.values(universe.players).find(p => p.name === pilotName && p.sector === 'pve');
@@ -235,7 +314,7 @@ setInterval(async () => {
     }
   }
 
-  // 7. Industria
+  // 9. Industria
   cachedJobs.forEach(async (job) => {
     if (!job.completed && now >= job.completesAt) {
       job.completed = true;
@@ -248,7 +327,7 @@ setInterval(async () => {
     }
   });
 
-  // Guardado continuo
+  // Guardado periódico
   for (let id in universe.players) {
     syncPilotToCloud(universe.players[id]);
   }
@@ -383,7 +462,7 @@ function resolveCombat(combatants) {
 
     if (totalDmg > 0) {
       applyDamage(target, totalDmg);
-      logs.push(`[${attacker.corp}] ${attacker.name} impactó a [${target.corp}] ${target.name} (-${totalDmg} daño).`);
+      logs.push(`[${attacker.corp}] ${attacker.name} impactó a [${target.corp}] ${target.name} (-${totalDmg} daño total).`);
       const targetSock = io.sockets.sockets.get(target.id);
       if (targetSock) targetSock.emit('action_fx', { type: 'under_fire', damage: totalDmg, target: 'player' });
       const attSock = io.sockets.sockets.get(attacker.id);
@@ -425,7 +504,7 @@ function handleDestruction(victim, killer) {
   io.emit('chat_broadcast', {
     channel: 'galaxy',
     sender: 'BAJA CONFIRMADA',
-    text: `Flota de [${killer.corp}] aniquiló a [${victim.corp}] ${victim.name} en Nullsec.`
+    text: `Flota de [${killer.corp}] aniquiló a [${victim.corp}] ${victim.name}. Toda su carga flotando en el pecio.`
   });
 
   victim.ore = 0;
@@ -537,9 +616,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (p.sector === 'nullsec') {
+    if (p.sector === 'nullsec' || p.sector === 'mining') {
       p.spoolingWarp = { destination: destination, timer: 5 };
-      socket.emit('chat_broadcast', { channel: 'local', sender: 'NAVEGACIÓN', text: `Iniciando curvatura hacia ${universe.sectors[destination]?.name}. Alineación en curso (5s)...` });
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'NAVEGACIÓN', text: `Alineando motores hacia ${universe.sectors[destination]?.name}. Salto en 5 segundos...` });
       return;
     }
 
@@ -548,6 +627,57 @@ io.on('connection', (socket) => {
     p.sector = destination;
     socket.join(destination);
     p.order = 'none';
+  });
+
+  // Atacar al pirata de la emboscada si está activo
+  socket.on('attack_ambush_pirate', () => {
+    const p = universe.players[socket.id];
+    if (!p || (p.sector !== 'mining' && p.sector !== 'nullsec')) return;
+    const sec = universe.sectors[p.sector];
+    if (!sec.pirateAmbush || !sec.pirateAmbush.active) return;
+
+    if (p.cap < 25) {
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'SISTEMAS', text: "Capacitor insuficiente (-25 Gj requerido)." });
+      return;
+    }
+
+    p.cap -= 25;
+    let shipBonus = SHIP_TYPES[p.shipKey]?.dmgBonus || 0;
+    let baseDmg = 35 + shipBonus + (p.weaponBonus || 0);
+    let skillBonus = 1 + ((p.skills?.gunnery || 0) * 0.10);
+    let totalDmg = Math.round(baseDmg * skillBonus);
+
+    // Añadir daño de drones
+    if (p.dronesDeployed && p.drones?.combat > 0) {
+      totalDmg += Math.round(p.drones.combat * DRONE_TYPES.combat_drone.dps);
+    }
+
+    sec.pirateAmbush.hp -= totalDmg;
+    socket.emit('action_fx', { type: 'laser_fire', damage: totalDmg, target: 'enemy' });
+
+    if (sec.pirateAmbush.hp <= 0) {
+      p.wallet += 300;
+      sec.wrecks = sec.wrecks || [];
+      sec.wrecks.push({
+        id: Date.now(),
+        name: `Pecio de Fragata Pirata`,
+        ore: 25,
+        bistrimite: p.sector === 'nullsec' ? 15 : 0,
+        credits: 200
+      });
+      sec.pirateAmbush = null;
+      io.to(p.sector).emit('chat_broadcast', {
+        channel: 'local',
+        sender: 'VICTORIA',
+        text: `¡${p.name} destruyó la nave pirata atacante! Pecio disponible para saquear (+300 ISK recompensa cobrada).`
+      });
+    } else {
+      socket.emit('chat_broadcast', {
+        channel: 'local',
+        sender: 'DISPARO',
+        text: `Impactaste al pirata (-${totalDmg} HP). Blindaje restante del enemigo: ${sec.pirateAmbush.hp} HP.`
+      });
+    }
   });
 
   socket.on('mine_volatile_cycle', () => {
@@ -609,7 +739,8 @@ io.on('connection', (socket) => {
     if (!p || (p.sector !== 'station' && p.sector !== 'outpost')) return;
 
     const baseRate = universe.sectors[p.sector].npcBuyPrice;
-    const bistrimiteRate = MINERAL_PRICES.bistrimite;
+    const isStorm = universe.sectors.nullsec.storm.active;
+    const bistrimiteRate = isStorm ? MINERAL_PRICES.bistrimite * 2 : MINERAL_PRICES.bistrimite;
 
     const earnedBase = (p.ore || 0) * baseRate;
     const earnedVolatile = (p.bistrimite || 0) * bistrimiteRate;
@@ -621,7 +752,7 @@ io.on('connection', (socket) => {
     socket.emit('chat_broadcast', {
       channel: 'local',
       sender: 'LOGÍSTICA',
-      text: `Liquidación total: +${earnedBase} ISK por menas y +${earnedVolatile} ISK por Bistrimita. Total: +${totalEarned} ISK.`
+      text: `Liquidación total: +${earnedBase} ISK por menas y +${earnedVolatile} ISK por Bistrimita (${isStorm ? '¡BONIFICACIÓN DE TORMENTA x2!' : ''}). Total: +${totalEarned} ISK.`
     });
 
     p.ore = 0;
@@ -631,10 +762,12 @@ io.on('connection', (socket) => {
 
   socket.on('loot_wreck', (wreckId) => {
     const p = universe.players[socket.id];
-    if (!p || p.sector !== 'nullsec') return;
-    const idx = universe.sectors.nullsec.wrecks.findIndex(w => w.id === wreckId);
+    if (!p) return;
+    const sec = universe.sectors[p.sector];
+    if (!sec || !sec.wrecks) return;
+    const idx = sec.wrecks.findIndex(w => w.id === wreckId);
     if (idx !== -1) {
-      const w = universe.sectors.nullsec.wrecks[idx];
+      const w = sec.wrecks[idx];
       let currentCargo = (p.ore || 0) + (p.bistrimite || 0);
       let spaceLeft = (p.cargoMax || 30) - currentCargo;
 
@@ -647,7 +780,12 @@ io.on('connection', (socket) => {
       p.wallet += w.credits;
       syncPilotToCloud(p);
 
-      universe.sectors.nullsec.wrecks.splice(idx, 1);
+      sec.wrecks.splice(idx, 1);
+      socket.emit('chat_broadcast', {
+        channel: 'local',
+        sender: 'SAQUEO',
+        text: `Pecio desmantelado: +${takenBistrimite} Bistrimita, +${takenOre} Menas, +${w.credits} ISK.`
+      });
     }
   });
 
@@ -913,5 +1051,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Servidor MMO Maestro corriendo en puerto ${PORT}`);
+  console.log(`Servidor MMO con Peligro Extremo corriendo en puerto ${PORT}`);
 });

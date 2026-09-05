@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sector 04 - Bolsa de Comercio Galáctica</title>
+  <title>Sector 04 - Industria y Comercio Espacial</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
     body { background-color: #070a0e; color: #79c0ff; font-family: 'Courier New', Courier, monospace; padding: 12px; margin: 0; }
-    .panel { border: 1px solid #1f6feb; padding: 14px; max-width: 780px; margin: 0 auto; background: #0d1117; box-shadow: 0 0 12px rgba(31, 111, 235, 0.25); }
+    .panel { border: 1px solid #1f6feb; padding: 14px; max-width: 800px; margin: 0 auto; background: #0d1117; box-shadow: 0 0 12px rgba(31, 111, 235, 0.25); }
     .header-bar { display: flex; justify-content: space-between; border-bottom: 1px dashed #30363d; padding-bottom: 8px; margin-bottom: 12px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
     @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
@@ -25,6 +25,7 @@
     .btn-loot { border-color: #e3b341; color: #e3b341; font-weight: bold; }
     .btn-sov { border-color: #f0883e; color: #f0883e; font-weight: bold; }
     .btn-buy { border-color: #388bfd; color: #79c0ff; font-weight: bold; }
+    .btn-ind { border-color: #e3b341; color: #f0883e; font-weight: bold; }
 
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 14, 0.95); display: flex; justify-content: center; align-items: center; z-index: 100; }
     .login-box { background: #0d1117; border: 1px solid #1f6feb; padding: 24px; max-width: 360px; width: 90%; text-align: center; }
@@ -39,10 +40,11 @@
     .chat-input { flex-grow: 1; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px; font-family: inherit; font-size: 0.8em; }
     .sos-banner { background: #3b0d0c; border: 1px solid #da3633; padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; }
 
-    /* Estilos del Tablón de Mercado */
     .market-table { width: 100%; border-collapse: collapse; font-size: 0.8em; margin-top: 6px; }
     .market-table th, .market-table td { border: 1px solid #21262d; padding: 4px 6px; text-align: left; }
     .market-table th { background: #161b22; color: #58a6ff; }
+
+    .job-card { background: #161b22; border: 1px solid #30363d; padding: 6px 8px; margin-top: 4px; font-size: 0.8em; display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
@@ -69,37 +71,64 @@
     <!-- Tu Nave -->
     <div class="box">
       <div style="color: #58a6ff; font-weight: bold;" id="my-name">[PILOTO ACTIVO]</div>
-      <div style="font-size: 0.8em; color: #d2a8ff;">Corp: <b id="my-corp">Sin Corp</b></div>
+      <div style="font-size: 0.8em; color: #d2a8ff;">Corp: <b id="my-corp">Sin Corp</b> | Daño Arma: <b id="my-dmg-bonus" style="color:#e3b341;">+0</b></div>
       <div style="font-size: 0.75em; margin-top:4px;">ESCUDO: <span id="my-shield">100</span>%</div>
       <div class="bar-track"><div id="bar-shield" class="bar-fill shield-fill"></div></div>
-      <div style="font-size: 0.75em;">BLINDAJE: <span id="my-armor">100</span>%</div>
+      <div style="font-size: 0.75em;">BLINDAJE: <span id="my-armor">100</span> / <span id="my-max-armor">100</span> HP</div>
       <div class="bar-track"><div id="bar-armor" class="bar-fill armor-fill"></div></div>
       <div style="font-size: 0.75em;">CAPACITOR: <span id="my-cap">100</span> Gj</div>
       <div class="bar-track"><div id="bar-cap" class="bar-fill cap-fill"></div></div>
-      <div style="font-size: 0.8em; margin-top: 6px;">Bodega de Carga: <b id="my-ore" style="color: #56d364;">0</b> m³ mineral</div>
+      <div style="font-size: 0.8em; margin-top: 6px;">Bodega de Carga: <b id="my-ore" style="color: #56d364;">0</b> m³ menas</div>
     </div>
 
     <!-- Navegación -->
     <div class="box">
       <div style="color: #d2a8ff; font-weight: bold; margin-bottom: 6px;">COMPUTADORA DE SALTO:</div>
       <button class="btn btn-warp" onclick="warpTo('station')">⏵ Saltar a Estación Central Jita</button>
-      <button class="btn btn-warp" onclick="warpTo('mining')">⏵ Saltar a Cinturón Minero Veldspar-4</button>
+      <button class="btn btn-warp" onclick="warpTo('mining')">⏵ Saltar a Cinturón Veldspar-4</button>
       <button class="btn btn-warp" onclick="warpTo('nullsec')">⏵ Saltar a Nullsec (Guerra / Soberanía)</button>
     </div>
   </div>
 
-  <!-- Zona de Acciones por Sector -->
   <div class="box" id="sector-actions"></div>
   <div id="wrecks-container" style="display: none; margin-top: 8px;"></div>
 
-  <!-- Tablón de Mercado Abierto (Solo visible en la Estación) -->
+  <!-- CENTRO DE INDUSTRIA Y MANUFACTURA (Solo en Estación) -->
+  <div class="box" id="industry-section" style="display: none; margin-top: 10px;">
+    <div style="color: #f0883e; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px;">
+      CENTRO DE MANUFACTURA E INDUSTRIA AEROESPACIAL
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; font-size: 0.8em;">
+      <div style="background: #010409; padding: 8px; border: 1px solid #30363d;">
+        <b>Plano: Láser de Pulso T2</b><br>
+        <span style="color:#8b949e;">Efecto: +20 daño continuo</span><br>
+        Costo: 25 m³ menas + 100 ISK | Tiempo: 30s<br>
+        <button class="btn btn-ind" style="margin-top: 4px;" onclick="startJob('laser_t2')">Iniciar Ensamblaje</button>
+      </div>
+
+      <div style="background: #010409; padding: 8px; border: 1px solid #30363d;">
+        <b>Plano: Crucero 'Cerberus'</b><br>
+        <span style="color:#8b949e;">Efecto: Casco ampliado a 150 HP</span><br>
+        Costo: 60 m³ menas + 300 ISK | Tiempo: 60s<br>
+        <button class="btn btn-ind" style="margin-top: 4px;" onclick="startJob('heavy_cruiser')">Iniciar Construcción</button>
+      </div>
+    </div>
+
+    <!-- Lista de trabajos de fabricación en curso -->
+    <div style="margin-top: 8px; font-size: 0.82em;">
+      <b>LÍNEAS DE PRODUCCIÓN EN CURSO:</b>
+      <div id="industry-jobs-list" style="margin-top: 4px;">Ningún trabajo en línea.</div>
+    </div>
+  </div>
+
+  <!-- BOLSA DE COMERCIO (Solo en Estación) -->
   <div class="box" id="market-section" style="display: none; margin-top: 10px;">
     <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px; display: flex; justify-content: space-between;">
       <span>BOLSA DE COMERCIO REGIONAL JITA</span>
       <span id="market-tax-info" style="font-size: 0.85em; color: #f0883e;">Impuesto: 0%</span>
     </div>
 
-    <!-- Formulario para crear orden -->
     <div style="margin-top: 8px; font-size: 0.82em; background: #010409; padding: 6px; border: 1px dashed #30363d;">
       <b>CREAR ORDEN DE VENTA:</b> Vender 
       <input type="number" id="sell-amount" style="width: 50px; background:#0d1117; border:1px solid #30363d; color:#79c0ff;" placeholder="Cant"> m³ a 
@@ -107,7 +136,6 @@
       <button class="btn btn-act" onclick="createOrder()">Publicar Oferta</button>
     </div>
 
-    <!-- Lista de órdenes activas -->
     <table class="market-table">
       <thead>
         <tr>
@@ -192,6 +220,9 @@
   function buyOrder(id) { socket.emit('buy_market_order', id); }
   function cancelOrder(id) { socket.emit('cancel_market_order', id); }
 
+  function startJob(bpKey) { socket.emit('start_industry_job', bpKey); }
+  function claimJob(jobId) { socket.emit('claim_industry_job', jobId); }
+
   socket.on('chat_broadcast', (data) => {
     const color = data.channel === 'galaxy' ? '#79c0ff' : '#56d364';
     appendChat(`<span style="color:${color};">[${data.channel.toUpperCase()}] <b>${data.sender}:</b></span> ${data.text}`);
@@ -218,30 +249,62 @@
     document.getElementById('sector-title').innerText = secInfo.name;
     document.getElementById('my-name').innerText = `[TU NAVE] ${me.name}`;
     document.getElementById('my-corp').innerText = `[${me.corp}]`;
+    document.getElementById('my-dmg-bonus').innerText = `+${me.weaponBonus || 0} dmg`;
     document.getElementById('my-wallet').innerText = me.wallet;
     document.getElementById('my-shield').innerText = me.shield;
     document.getElementById('my-armor').innerText = me.armor;
+    document.getElementById('my-max-armor').innerText = me.maxArmor || 100;
     document.getElementById('my-cap').innerText = me.cap;
     document.getElementById('my-ore').innerText = me.ore;
 
     document.getElementById('bar-shield').style.width = me.shield + '%';
-    document.getElementById('bar-armor').style.width = me.armor + '%';
+    const armorPct = Math.round((me.armor / (me.maxArmor || 100)) * 100);
+    document.getElementById('bar-armor').style.width = armorPct + '%';
     document.getElementById('bar-cap').style.width = me.cap + '%';
 
     const actionsBox = document.getElementById('sector-actions');
     const wrecksBox = document.getElementById('wrecks-container');
     const marketBox = document.getElementById('market-section');
+    const indBox = document.getElementById('industry-section');
 
     if (me.sector === 'station') {
       wrecksBox.style.display = 'none';
       marketBox.style.display = 'block';
+      indBox.style.display = 'block';
 
+      // Renderizar trabajos de manufactura del piloto
+      const jobsList = document.getElementById('industry-jobs-list');
+      const myJobs = (data.industryJobs || []).filter(j => j.pilot === me.name);
+      if (myJobs.length > 0) {
+        const now = Date.now();
+        jobsList.innerHTML = myJobs.map(j => {
+          const remainingSec = Math.max(0, Math.round((j.completesAt - now) / 1000));
+          if (remainingSec === 0 || j.completed) {
+            return `
+              <div class="job-card" style="border-color: #3fb950;">
+                <span style="color: #7ee787;">✔ <b>${j.blueprintName}</b> TERMINADO</span>
+                <button class="btn btn-act" onclick="claimJob(${j.id})">Entregar e Instalar</button>
+              </div>
+            `;
+          } else {
+            return `
+              <div class="job-card">
+                <span>⚙ <b>${j.blueprintName}</b> en producción...</span>
+                <span style="color: #f0883e;">${remainingSec}s restantes</span>
+              </div>
+            `;
+          }
+        }).join('');
+      } else {
+        jobsList.innerHTML = `<span style="color:#8b949e;">No tienes líneas de producción activas.</span>`;
+      }
+
+      // Impuestos y mercado
       const sovOwner = data.sectors.nullsec.sovereignty.ownerCorp;
       document.getElementById('market-tax-info').innerText = sovOwner === "Ninguna" 
         ? "Sin impuestos de soberanía" 
         : `Impuesto: 5% a [${sovOwner}]`;
 
-      // Renderizar tabla de mercado
       const tbody = document.getElementById('market-tbody');
       if (data.market && data.market.length > 0) {
         tbody.innerHTML = data.market.map(o => {
@@ -262,7 +325,7 @@
           `;
         }).join('');
       } else {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:#8b949e;">No hay ofertas disponibles. ¡Sé el primero en vender!</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="color:#8b949e;">No hay ofertas disponibles.</td></tr>`;
       }
 
       actionsBox.innerHTML = `
@@ -273,12 +336,14 @@
     } else if (me.sector === 'mining') {
       wrecksBox.style.display = 'none';
       marketBox.style.display = 'none';
+      indBox.style.display = 'none';
       actionsBox.innerHTML = `
         <b style="color:#56d364;">CINTURÓN VELDSPAR-4:</b> (Roca: ${secInfo.asteroidHp}%)<br>
         <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser de Extracción (+5 menas)</button>
       `;
     } else if (me.sector === 'nullsec') {
       marketBox.style.display = 'none';
+      indBox.style.display = 'none';
       const sov = secInfo.sovereignty;
       actionsBox.innerHTML = `
         <div style="border-bottom: 1px dashed #30363d; padding-bottom: 6px; margin-bottom: 6px;">

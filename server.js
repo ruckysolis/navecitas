@@ -13,15 +13,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 const DB_FILE = path.join(__dirname, 'pilots.json');
 
 function loadDatabase() {
-  if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({}));
-  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { return {}; }
+  if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ pilots: {}, market: [] }));
+  try {
+    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    return {
+      pilots: data.pilots || data, // compatibilidad hacia atrás
+      market: data.market || []
+    };
+  } catch (e) {
+    return { pilots: {}, market: [] };
+  }
 }
 
-function saveDatabase(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+function saveDatabase(data) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
-let dbPilots = loadDatabase();
+let dbData = loadDatabase();
+let dbPilots = dbData.pilots;
+let marketOrders = dbData.market; // Órdenes activas en el mercado
 
 const universe = {
   players: {},
@@ -34,7 +44,7 @@ const universe = {
       timer: 20, 
       round: 1, 
       wrecks: [],
-      sovereignty: { ownerCorp: "Ninguna", progress: 0 } // Control territorial
+      sovereignty: { ownerCorp: "Ninguna", progress: 0 }
     }
   }
 };
@@ -43,7 +53,6 @@ const universe = {
 setInterval(() => {
   const nullsecCombatants = Object.values(universe.players).filter(p => p.sector === 'nullsec' && p.armor > 0);
 
-  // 1. Manejo del reloj de combate
   if (nullsecCombatants.length >= 2) {
     universe.sectors.nullsec.timer--;
     if (universe.sectors.nullsec.timer <= 0) {
@@ -55,19 +64,7 @@ setInterval(() => {
     universe.sectors.nullsec.timer = 20;
   }
 
-  // 2. Ingresos pasivos por soberanía (Cada minuto si la corp domina Nullsec)
-  const sov = universe.sectors.nullsec.sovereignty;
-  if (sov.ownerCorp !== "Ninguna" && Date.now() % 60000 < 1000) {
-    Object.values(universe.players).forEach(p => {
-      if (p.corp === sov.ownerCorp) {
-        p.wallet += 50;
-        const sock = io.sockets.sockets.get(p.id);
-        if (sock) sock.emit('chat_broadcast', { channel: 'galaxy', sender: 'IMPUESTOS', text: `Dividendo de soberanía en Nullsec recibido: +50 ISK para [${sov.ownerCorp}].` });
-      }
-    });
-  }
-
-  // Guardar en disco
+  // Guardar estado de pilotos
   for (let id in universe.players) {
     const p = universe.players[id];
     if (dbPilots[p.name]) {
@@ -78,24 +75,21 @@ setInterval(() => {
       dbPilots[p.name].corp = p.corp;
     }
   }
-  saveDatabase(dbPilots);
+  saveDatabase({ pilots: dbPilots, market: marketOrders });
 
   io.emit('universe_tick', {
     sectors: universe.sectors,
-    players: universe.players
+    players: universe.players,
+    market: marketOrders
   });
 }, 1000);
 
 function resolveCombat(combatants) {
   let logs = [];
-
   combatants.forEach(p => p.cap = Math.min(100, p.cap + 15));
 
-  // Concentración de fuego respetando corporación (No fuego amigo)
   combatants.forEach(attacker => {
     if (attacker.armor <= 0) return;
-
-    // Buscar objetivo que NO sea de la misma corporación
     const target = combatants.find(p => p.id !== attacker.id && p.armor > 0 && (p.corp === "Sin Corp" || p.corp !== attacker.corp));
     if (!target) return;
 
@@ -103,7 +97,7 @@ function resolveCombat(combatants) {
       attacker.cap -= 25;
       let dmg = target.order === 'defense' ? 15 : 35;
       applyDamage(target, dmg);
-      logs.push(`[${attacker.corp}] ${attacker.name} abrió fuego contra [${target.corp}] ${target.name} (-${dmg} daño).`);
+      logs.push(`[${attacker.corp}] ${attacker.name} disparó a [${target.corp}] ${target.name} (-${dmg} daño).`);
 
       if (target.armor <= 0) {
         handleDestruction(target, attacker);
@@ -146,7 +140,7 @@ function handleDestruction(victim, killer) {
   io.emit('chat_broadcast', {
     channel: 'galaxy',
     sender: 'BAJA CONFIRMADA',
-    text: `Flota de [${killer.corp}] destruyó a [${victim.corp}] ${victim.name} en Nullsec.`
+    text: `Flota de [${killer.corp}] pulverizó la fragata de [${victim.corp}] ${victim.name} en Nullsec.`
   });
 
   victim.ore = 0;
@@ -159,7 +153,7 @@ function handleDestruction(victim, killer) {
   if (victimSocket) {
     victimSocket.leave('nullsec');
     victimSocket.join('station');
-    victimSocket.emit('ship_destroyed', "Tu nave fue destruida. Cápsula de escape transferida a Jita.");
+    victimSocket.emit('ship_destroyed', "Nave destruida. Cápsula de escape transferida a la Estación Central.");
   }
 }
 
@@ -171,12 +165,12 @@ io.on('connection', (socket) => {
       dbPilots[cleanName] = {
         name: cleanName,
         corp: "Sin Corp",
-        wallet: 200,
-        ore: 0,
+        wallet: 300,
+        ore: 10,
         armor: 100,
         shield: 100
       };
-      saveDatabase(dbPilots);
+      saveDatabase({ pilots: dbPilots, market: marketOrders });
     }
 
     const saved = dbPilots[cleanName];
@@ -199,18 +193,121 @@ io.on('connection', (socket) => {
     io.emit('chat_broadcast', { channel: 'galaxy', sender: 'RED', text: `${saved.name} [${saved.corp}] ha entrado al universo.` });
   });
 
-  // Crear o unirse a corporación
   socket.on('set_corp', (corpTag) => {
     const p = universe.players[socket.id];
     if (!p) return;
     const tag = corpTag.trim().toUpperCase().substring(0, 5) || "CORP";
     p.corp = tag;
     dbPilots[p.name].corp = tag;
-    saveDatabase(dbPilots);
-    io.emit('chat_broadcast', { channel: 'galaxy', sender: 'REGISTRO', text: `${p.name} ahora vuela bajo la bandera de [${tag}].` });
+    saveDatabase({ pilots: dbPilots, market: marketOrders });
+    io.emit('chat_broadcast', { channel: 'galaxy', sender: 'REGISTRO', text: `${p.name} ahora vuela para [${tag}].` });
   });
 
-  // Captura de Soberanía en Nullsec
+  // --- SISTEMA DE MERCADO ABIERTO ---
+  // Publicar orden de venta
+  socket.on('create_sell_order', ({ amount, pricePerUnit }) => {
+    const p = universe.players[socket.id];
+    if (!p || p.sector !== 'station') return;
+
+    amount = parseInt(amount);
+    pricePerUnit = parseInt(pricePerUnit);
+
+    if (isNaN(amount) || amount <= 0 || isNaN(pricePerUnit) || pricePerUnit <= 0) return;
+    if (p.ore < amount) {
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'MERCADO', text: "No tienes suficiente mineral en bodega para crear esta orden." });
+      return;
+    }
+
+    p.ore -= amount;
+    const order = {
+      id: Date.now(),
+      seller: p.name,
+      corp: p.corp,
+      amount: amount,
+      pricePerUnit: pricePerUnit
+    };
+    marketOrders.push(order);
+    saveDatabase({ pilots: dbPilots, market: marketOrders });
+
+    io.emit('chat_broadcast', {
+      channel: 'galaxy',
+      sender: 'MERCADO',
+      text: `NUEVA OFERTA: ${p.name} puso a la venta ${amount} m³ de mineral a ${pricePerUnit} ISK/u.`
+    });
+  });
+
+  // Comprar orden del mercado
+  socket.on('buy_market_order', (orderId) => {
+    const buyer = universe.players[socket.id];
+    if (!buyer || buyer.sector !== 'station') return;
+
+    const idx = marketOrders.findIndex(o => o.id === orderId);
+    if (idx === -1) return;
+
+    const order = marketOrders[idx];
+    const totalCost = order.amount * order.pricePerUnit;
+
+    if (buyer.wallet < totalCost) {
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'MERCADO', text: "Fondos insuficientes para comprar este lote de mineral." });
+      return;
+    }
+
+    // Cobrar al comprador y entregar mineral
+    buyer.wallet -= totalCost;
+    buyer.ore += order.amount;
+
+    // Calcular impuesto corporativo (5% para la alianza que controla Nullsec)
+    let tax = 0;
+    const sovOwner = universe.sectors.nullsec.sovereignty.ownerCorp;
+    if (sovOwner !== "Ninguna") {
+      tax = Math.round(totalCost * 0.05);
+    }
+    const netSellerEarned = totalCost - tax;
+
+    // Pagar al vendedor (esté o no conectado en esta sesión)
+    if (dbPilots[order.seller]) {
+      dbPilots[order.seller].wallet += netSellerEarned;
+    }
+    // Si está conectado en vivo, actualizar su objeto en memoria
+    const sellerPlayer = Object.values(universe.players).find(p => p.name === order.seller);
+    if (sellerPlayer) {
+      sellerPlayer.wallet += netSellerEarned;
+    }
+
+    // Repartir dividendo de impuesto a miembros de la corp soberana en línea
+    if (tax > 0) {
+      Object.values(universe.players).forEach(p => {
+        if (p.corp === sovOwner) {
+          p.wallet += tax;
+        }
+      });
+    }
+
+    marketOrders.splice(idx, 1);
+    saveDatabase({ pilots: dbPilots, market: marketOrders });
+
+    io.emit('chat_broadcast', {
+      channel: 'galaxy',
+      sender: 'MERCADO',
+      text: `${buyer.name} compró el lote de ${order.seller} (${order.amount} m³ por ${totalCost} ISK).`
+    });
+  });
+
+  // Cancelar orden propia
+  socket.on('cancel_market_order', (orderId) => {
+    const p = universe.players[socket.id];
+    if (!p || p.sector !== 'station') return;
+
+    const idx = marketOrders.findIndex(o => o.id === orderId && o.seller === p.name);
+    if (idx !== -1) {
+      const order = marketOrders[idx];
+      p.ore += order.amount;
+      marketOrders.splice(idx, 1);
+      saveDatabase({ pilots: dbPilots, market: marketOrders });
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'MERCADO', text: "Orden cancelada. Mineral devuelto a tu bodega." });
+    }
+  });
+
   socket.on('capture_sov', () => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'nullsec' || p.corp === "Sin Corp") return;
@@ -221,9 +318,9 @@ io.on('connection', (socket) => {
       if (sov.progress >= 100) {
         sov.ownerCorp = p.corp;
         sov.progress = 100;
-        io.emit('chat_broadcast', { channel: 'galaxy', sender: 'SOBERANÍA', text: `¡[${p.corp}] ha conquistado el Sector Abisal Nullsec X-99!` });
+        io.emit('chat_broadcast', { channel: 'galaxy', sender: 'SOBERANÍA', text: `¡[${p.corp}] ha capturado la Soberanía en Nullsec! Cobrará el 5% de impuestos de todo el mercado espacial.` });
       } else {
-        io.to('nullsec').emit('chat_broadcast', { channel: 'local', sender: 'BALIZA', text: `[${p.corp}] capturando baliza de soberanía (${sov.progress}%)...` });
+        io.to('nullsec').emit('chat_broadcast', { channel: 'local', sender: 'BALIZA', text: `[${p.corp}] reclamando soberanía (${sov.progress}%)...` });
       }
     }
   });
@@ -231,11 +328,13 @@ io.on('connection', (socket) => {
   socket.on('send_chat', ({ channel, text }) => {
     const p = universe.players[socket.id];
     if (!p || !text.trim()) return;
+    const ch = channel === 'galaxy' ? 'galaxy' : 'local';
+    const room = ch === 'galaxy' ? null : p.sector;
 
-    if (channel === 'galaxy') {
-      io.emit('chat_broadcast', { channel: 'galaxy', sender: `[${p.corp}] ${p.name}`, text: text.trim() });
+    if (room) {
+      io.to(room).emit('chat_broadcast', { channel: 'local', sender: `[${p.corp}] ${p.name}`, text: text.trim() });
     } else {
-      io.to(p.sector).emit('chat_broadcast', { channel: 'local', sender: `[${p.corp}] ${p.name}`, text: text.trim() });
+      io.emit('chat_broadcast', { channel: 'galaxy', sender: `[${p.corp}] ${p.name}`, text: text.trim() });
     }
   });
 
@@ -286,16 +385,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('sell_ore', () => {
-    const p = universe.players[socket.id];
-    if (p && p.sector === 'station' && p.ore > 0) {
-      let earned = p.ore * 20;
-      p.wallet += earned;
-      p.ore = 0;
-      socket.emit('chat_broadcast', { channel: 'local', sender: 'MERCADO', text: `Mineral vendido por +${earned} ISK.` });
-    }
-  });
-
   socket.on('repair', () => {
     const p = universe.players[socket.id];
     if (p && p.sector === 'station' && p.wallet >= 50) {
@@ -313,5 +402,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${PORT}`);
+  console.log(`Servidor MMO con mercado libre corriendo en puerto ${PORT}`);
 });

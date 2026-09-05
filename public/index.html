@@ -3,111 +3,219 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sector 04 - MMO Espacial</title>
+  <title>Sector 04 - Tactical Command MMO</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
-    body { background-color: #070a0e; color: #79c0ff; font-family: 'Courier New', Courier, monospace; padding: 12px; margin: 0; }
-    .panel { border: 1px solid #1f6feb; padding: 14px; max-width: 860px; margin: 0 auto; background: #0d1117; box-shadow: 0 0 14px rgba(31, 111, 235, 0.25); }
-    .header-bar { display: flex; justify-content: space-between; border-bottom: 1px dashed #30363d; padding-bottom: 8px; margin-bottom: 10px; }
-    .grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 10px; margin-bottom: 10px; }
-    @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } }
-    .box { background: #090d12; border: 1px solid #21262d; padding: 10px; }
-    .bar-track { width: 100%; height: 8px; background: #161b22; border: 1px solid #30363d; margin: 2px 0 6px 0; }
-    .bar-fill { height: 100%; transition: width 0.3s; }
-    .shield-fill { background: #388bfd; }
-    .armor-fill { background: #d29922; }
-    .cargo-fill { background: #56d364; }
-    .cap-fill { background: #e3b341; }
-    .npc-fill { background: #ff7b72; }
+    :root {
+      --hud-blue: #00d2ff;
+      --hud-green: #39ff14;
+      --hud-red: #ff3131;
+      --hud-gold: #ffd700;
+      --hud-bg: #050b14;
+      --hud-panel: #0a1322;
+      --hud-border: #132b45;
+    }
 
-    .btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 5px 9px; cursor: pointer; font-family: inherit; font-size: 0.85em; margin: 2px; }
-    .btn:hover { background: #30363d; border-color: #8b949e; }
-    .btn-warp { border-color: #a371f7; color: #d2a8ff; font-weight: bold; width: 100%; text-align: left; margin: 2px 0; }
-    .btn-act { border-color: #238636; color: #3fb950; font-weight: bold; }
-    .btn-trade { border-color: #e3b341; color: #e3b341; font-weight: bold; }
-    .btn-ship { border-color: #388bfd; color: #79c0ff; font-weight: bold; }
-    .btn-sos { border-color: #da3633; color: #f85149; font-weight: bold; }
-    .btn-mission { border-color: #f85149; color: #ff7b72; font-weight: bold; }
-    .btn-drone { border-color: #3fb950; color: #7ee787; font-weight: bold; }
-    .btn-volatile { border-color: #d29922; color: #f0883e; font-weight: bold; background: #261704; }
+    * { box-sizing: border-box; }
+    body {
+      background-color: var(--hud-bg);
+      color: var(--hud-blue);
+      font-family: 'Courier New', Courier, monospace;
+      padding: 10px;
+      margin: 0;
+      user-select: none;
+    }
+
+    /* Efecto de alarma roja y sacudida de daño */
+    @keyframes redAlertPulse {
+      0% { box-shadow: inset 0 0 20px rgba(255, 49, 49, 0.4); border-color: var(--hud-red); }
+      50% { box-shadow: inset 0 0 60px rgba(255, 49, 49, 0.8); border-color: #ff0055; }
+      100% { box-shadow: inset 0 0 20px rgba(255, 49, 49, 0.4); border-color: var(--hud-red); }
+    }
+    @keyframes screenShake {
+      0% { transform: translate(1px, 1px) rotate(0deg); }
+      20% { transform: translate(-3px, 0px) rotate(1deg); }
+      40% { transform: translate(3px, -1px) rotate(-1deg); }
+      60% { transform: translate(-3px, 1px) rotate(0deg); }
+      80% { transform: translate(2px, -1px) rotate(1deg); }
+      100% { transform: translate(0, 0) rotate(0deg); }
+    }
+
+    .cockpit-frame {
+      border: 2px solid var(--hud-border);
+      padding: 12px;
+      max-width: 960px;
+      margin: 0 auto;
+      background: var(--hud-panel);
+      position: relative;
+      transition: border-color 0.3s;
+    }
+    .red-alert-active { animation: redAlertPulse 1.2s infinite, screenShake 0.4s 1; }
+
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--hud-border);
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+      font-size: 0.9em;
+      letter-spacing: 1px;
+    }
+
+    /* Radar Táctico */
+    .radar-wrapper {
+      position: relative;
+      background: #02060c;
+      border: 1px solid #1a385c;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    #tactical-radar {
+      display: block;
+      background: radial-gradient(circle, #081628 0%, #02060d 75%);
+    }
+    .floating-text-layer {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .float-num {
+      position: absolute;
+      font-weight: bold;
+      font-size: 14px;
+      animation: floatUp 1.4s forwards ease-out;
+      text-shadow: 0 0 6px #000;
+    }
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-45px); }
+    }
+
+    .grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 10px; margin-bottom: 10px; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    .box { background: #050c17; border: 1px solid var(--hud-border); padding: 10px; }
+
+    .bar-track { width: 100%; height: 8px; background: #0c1828; border: 1px solid #1b3552; margin: 2px 0 6px 0; }
+    .bar-fill { height: 100%; transition: width 0.3s; }
+    .shield-fill { background: var(--hud-blue); box-shadow: 0 0 6px var(--hud-blue); }
+    .armor-fill { background: #e09f3e; box-shadow: 0 0 6px #e09f3e; }
+    .cargo-fill { background: var(--hud-green); box-shadow: 0 0 6px var(--hud-green); }
+    .cap-fill { background: var(--hud-gold); box-shadow: 0 0 6px var(--hud-gold); }
+
+    .btn {
+      background: #091a2e;
+      border: 1px solid #20456e;
+      color: #9cd4ff;
+      padding: 6px 11px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.82em;
+      margin: 2px;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #13335a; border-color: var(--hud-blue); color: #fff; }
+    .btn-warp { border-color: #7b2cbf; color: #c77dff; font-weight: bold; width: 100%; text-align: left; margin: 3px 0; }
+    .btn-act { border-color: var(--hud-green); color: var(--hud-green); font-weight: bold; }
+    .btn-trade { border-color: var(--hud-gold); color: var(--hud-gold); font-weight: bold; }
+    .btn-sos { border-color: var(--hud-red); color: var(--hud-red); font-weight: bold; }
+    .btn-volatile { border-color: #f0883e; color: #ff9e00; background: #221200; font-weight: bold; }
 
     .station-nav { display: flex; gap: 4px; margin-top: 10px; margin-bottom: 6px; flex-wrap: wrap; }
-    .nav-tab { background: #161b22; border: 1px solid #30363d; color: #8b949e; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 0.82em; }
-    .nav-tab.active { background: #1f6feb; color: #fff; border-color: #58a6ff; font-weight: bold; }
+    .nav-tab { background: #071526; border: 1px solid #183350; color: #628ea6; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 0.82em; }
+    .nav-tab.active { background: #123359; color: #fff; border-color: var(--hud-blue); font-weight: bold; }
 
     .market-table { width: 100%; border-collapse: collapse; font-size: 0.8em; margin-top: 6px; }
-    .market-table th, .market-table td { border: 1px solid #21262d; padding: 4px 6px; text-align: left; }
-    .market-table th { background: #161b22; color: #58a6ff; }
+    .market-table th, .market-table td { border: 1px solid #152c47; padding: 4px 6px; text-align: left; }
+    .market-table th { background: #0c1f36; color: var(--hud-blue); }
 
-    #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 14, 0.95); display: flex; justify-content: center; align-items: center; z-index: 100; }
-    .login-box { background: #0d1117; border: 1px solid #1f6feb; padding: 24px; max-width: 360px; width: 90%; text-align: center; }
-    .login-input { background: #010409; border: 1px solid #30363d; color: #79c0ff; font-family: inherit; padding: 8px; width: 85%; margin: 6px 0; }
-    .login-error { color: #f85149; font-size: 0.8em; margin-top: 6px; display: none; }
+    #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(2, 6, 12, 0.96); display: flex; justify-content: center; align-items: center; z-index: 100; }
+    .login-box { background: var(--hud-panel); border: 2px solid var(--hud-blue); padding: 24px; max-width: 360px; width: 90%; text-align: center; box-shadow: 0 0 20px rgba(0, 210, 255, 0.2); }
+    .login-input { background: #020710; border: 1px solid #1a3c61; color: var(--hud-blue); font-family: inherit; padding: 8px; width: 85%; margin: 6px 0; }
+    .login-error { color: var(--hud-red); font-size: 0.8em; margin-top: 6px; display: none; }
 
-    .chat-section { margin-top: 10px; background: #010409; border: 1px solid #21262d; padding: 8px; }
+    .chat-section { margin-top: 10px; background: #020710; border: 1px solid var(--hud-border); padding: 8px; }
     .chat-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
-    .chat-tab { background: #161b22; border: 1px solid #30363d; color: #8b949e; padding: 4px 8px; font-size: 0.75em; cursor: pointer; }
-    .chat-tab.active { background: #1f6feb; color: #fff; border-color: #58a6ff; }
-    #chat-box { height: 100px; overflow-y: auto; font-size: 0.8em; line-height: 1.4; color: #c9d1d9; }
+    .chat-tab { background: #0a1626; border: 1px solid #152d49; color: #628ea6; padding: 4px 8px; font-size: 0.75em; cursor: pointer; }
+    .chat-tab.active { background: #16365c; color: #fff; border-color: var(--hud-blue); }
+    #chat-box { height: 95px; overflow-y: auto; font-size: 0.8em; line-height: 1.4; color: #a9c7e0; }
     .chat-form { display: flex; gap: 4px; margin-top: 6px; }
-    .chat-input { flex-grow: 1; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px; font-family: inherit; font-size: 0.8em; }
-    .sos-banner { background: #3b0d0c; border: 1px solid #da3633; padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; }
-    .warp-warning { background: #2e1045; border: 1px solid #a371f7; padding: 6px 10px; margin-bottom: 8px; font-size: 0.82em; color: #d2a8ff; font-weight: bold; }
+    .chat-input { flex-grow: 1; background: #06111f; border: 1px solid #152d49; color: #fff; padding: 6px; font-family: inherit; font-size: 0.8em; }
+    .sos-banner { background: #3b0d0c; border: 1px solid var(--hud-red); padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; }
+    .warp-warning { background: #23083b; border: 1px solid #c77dff; padding: 6px 10px; margin-bottom: 8px; font-size: 0.82em; color: #e0aaff; font-weight: bold; }
   </style>
 </head>
 <body>
 
 <div id="login-overlay">
   <div class="login-box">
-    <h3 style="color: #58a6ff; margin-top: 0;">TERMINAL PILOTO // AUTENTICACIÓN</h3>
-    <p style="font-size:0.75em; color:#8b949e; margin-bottom:8px;">Si el piloto no existe, se registrará con la clave indicada.</p>
+    <h3 style="color: var(--hud-blue); margin-top: 0; letter-spacing: 2px;">TACTICAL COMMAND // LOGIN</h3>
+    <p style="font-size:0.75em; color:#628ea6; margin-bottom:8px;">Ingresa tus credenciales para abordar la nave.</p>
     <input type="text" id="login-name" class="login-input" placeholder="Nombre de piloto..." maxlength="14" autofocus>
     <input type="password" id="login-pass" class="login-input" placeholder="Contraseña de acceso..." maxlength="20">
     <div id="login-err-msg" class="login-error"></div>
     <br>
-    <button class="btn btn-act" style="width: 90%; padding: 8px; margin-top:8px;" onclick="doLogin()">Autenticar y Entrar</button>
+    <button class="btn btn-act" style="width: 90%; padding: 9px; margin-top:8px;" onclick="doLogin()">Autenticar y Conectar</button>
   </div>
 </div>
 
-<div class="panel">
+<div class="cockpit-frame" id="cockpit-frame">
   <div id="sos-zone" style="display: none;"></div>
   <div id="warp-zone" style="display: none;" class="warp-warning"></div>
 
   <div class="header-bar">
-    <div><strong>SECTOR: <span id="sector-title" style="color: #e3b341;">...</span></strong></div>
-    <div>BILLETERA: <b id="my-wallet" style="color: #7ee787;">0</b> ISK</div>
+    <div>RADAR CUADRANTE: <span id="sector-title" style="color: var(--hud-gold); font-weight:bold;">...</span></div>
+    <div>CRÉDITOS: <b id="my-wallet" style="color: var(--hud-green);">0</b> ISK</div>
+  </div>
+
+  <!-- RADAR TÁCTICO 2D INTERACTIVO -->
+  <div class="radar-wrapper">
+    <canvas id="tactical-radar" width="880" height="260"></canvas>
+    <div class="floating-text-layer" id="fx-layer"></div>
   </div>
 
   <div class="grid">
-    <!-- Nave Activa -->
+    <!-- Diagnóstico de Sistemas -->
     <div class="box">
-      <div style="color: #58a6ff; font-weight: bold;" id="my-name">[PILOTO]</div>
-      <div style="font-size: 0.8em; color: #d2a8ff;">Corp: <b id="my-corp">Sin Corp</b> | Nave: <b id="my-ship" style="color:#e3b341;">...</b></div>
-      <div style="font-size: 0.75em; margin-top:4px;">ESCUDO: <span id="my-shield">100</span>%</div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--hud-blue); font-weight: bold;" id="my-name">[PILOTO]</span>
+        <span style="font-size: 0.8em; color: #c77dff;"><b id="my-corp">[SIN CORP]</b></span>
+      </div>
+      <div style="font-size: 0.78em; color: #8ba8c2; margin-bottom: 4px;">CASCO: <b id="my-ship" style="color:var(--hud-gold);">...</b></div>
+
+      <div style="font-size: 0.75em;">ESCUDO DEFLECTOR: <span id="my-shield">100</span>%</div>
       <div class="bar-track"><div id="bar-shield" class="bar-fill shield-fill"></div></div>
-      <div style="font-size: 0.75em;">BLINDAJE: <span id="my-armor">100</span> / <span id="my-max-armor">100</span> HP</div>
+
+      <div style="font-size: 0.75em;">BLINDAJE DE CASCO: <span id="my-armor">100</span> / <span id="my-max-armor">100</span> HP</div>
       <div class="bar-track"><div id="bar-armor" class="bar-fill armor-fill"></div></div>
-      <div style="font-size: 0.75em;">CAPACITOR: <span id="my-cap">100</span> Gj</div>
+
+      <div style="font-size: 0.75em;">CAPACITOR / REACTOR: <span id="my-cap">100</span> Gj <small style="color:var(--hud-gold);">(+5 Gj/s)</small></div>
       <div class="bar-track"><div id="bar-cap" class="bar-fill cap-fill"></div></div>
-      <div style="font-size: 0.75em;">CARGA TOTAL: <span id="my-cargo-total">0</span> / <span id="my-cargo-max">30</span> m³</div>
+
+      <div style="font-size: 0.75em;">BODEGA DE CARGA: <span id="my-cargo-total">0</span> / <span id="my-cargo-max">30</span> m³</div>
       <div class="bar-track"><div id="bar-cargo" class="bar-fill cargo-fill"></div></div>
-      <div style="font-size: 0.75em; color: #8b949e;">Menas: <b id="my-ore" style="color:#56d364;">0</b> m³ | Bistrimita: <b id="my-bistrimite" style="color:#f0883e;">0</b> m³</div>
-      <div style="font-size: 0.78em; margin-top: 4px; border-top: 1px dashed #21262d; padding-top: 4px;">
+      <div style="font-size: 0.75em; color: #628ea6;">Menas: <b id="my-ore" style="color:var(--hud-green);">0</b> m³ | Bistrimita: <b id="my-bistrimite" style="color:#ff9e00;">0</b> m³</div>
+
+      <div style="font-size: 0.78em; margin-top: 5px; border-top: 1px dashed var(--hud-border); padding-top: 5px;">
         BAHÍA DE DRONES (<span id="drone-count">0</span> / <span id="drone-cap">1</span>):
-        <span id="drone-desc" style="color:#7ee787;">Ninguno</span>
-        <button class="btn btn-drone" id="btn-drone-toggle" style="margin-left: 6px; padding: 2px 6px; font-size: 0.75em;" onclick="socket.emit('toggle_drones')">Desplegar</button>
+        <span id="drone-desc" style="color:var(--hud-green);">Ninguno</span>
+        <button class="btn" id="btn-drone-toggle" style="margin-left: 6px; padding: 2px 6px; font-size: 0.75em;" onclick="socket.emit('toggle_drones')">Desplegar</button>
       </div>
     </div>
 
     <!-- Navegación Stargates -->
     <div class="box">
-      <div style="color: #d2a8ff; font-weight: bold; margin-bottom: 4px;">PUERTAS DE SALTO DISPONIBLES:</div>
-      <div id="stargate-list">Cargando rutas...</div>
-      <button class="btn btn-mission" id="btn-warp-mission" style="display:none; width:100%; margin-top:4px;" onclick="socket.emit('warp_to_mission')">⚡ INTERCEPTAR SEÑAL HOSTIL (MISIÓN)</button>
+      <div style="color: #c77dff; font-weight: bold; margin-bottom: 4px; font-size: 0.85em;">SALTO A COORDENADAS:</div>
+      <div id="stargate-list">Cargando telemetría...</div>
+      <button class="btn btn-sos" id="btn-warp-mission" style="display:none; width:100%; margin-top:4px;" onclick="socket.emit('warp_to_mission')">⚡ INTERCEPTAR BLANCO PIRATA (MISIÓN)</button>
     </div>
   </div>
 
-  <!-- Acciones Básicas del Sector -->
+  <!-- Zona de Acciones Tácticas del Sector -->
   <div class="box" id="sector-actions"></div>
   <div id="wrecks-container" style="display: none; margin-top: 6px;"></div>
 
@@ -125,119 +233,115 @@
 
     <!-- Comercio Asimétrico Local -->
     <div class="box tab-content" id="tab-trade-content">
-      <b style="color:#e3b341;">LOGÍSTICA REGIONAL:</b><br>
+      <b style="color:var(--hud-gold);">LOGÍSTICA REGIONAL:</b><br>
       <span id="station-rate-info">Cotización de menas: 20 ISK/m³</span><br>
-      <span style="color:#f0883e; font-size: 0.85em;">Cotización de Bistrimita Volátil: 120 ISK/m³</span><br>
-      <button class="btn btn-trade" style="margin-top:6px;" onclick="socket.emit('sell_all_minerals')">Liquidación Total de Minerales</button>
+      <span style="color:#ff9e00; font-size: 0.85em;">Cotización de Bistrimita Volátil: 120 ISK/m³</span><br>
+      <button class="btn btn-trade" style="margin-top:6px;" onclick="socket.emit('sell_all_minerals')">Descargar y Liquidar Todo el Mineral</button>
     </div>
 
     <!-- Bolsa de Jugadores -->
     <div class="box tab-content" id="tab-market-content" style="display: none;">
-      <b style="color:#58a6ff;">MERCADO LIBRE ENTRE JUGADORES</b>
-      <div style="margin: 6px 0; font-size: 0.82em; background: #010409; padding: 6px; border: 1px dashed #30363d;">
-        <b>PUBLICAR OFERTA:</b> Vender 
-        <input type="number" id="sell-amount" style="width:50px; background:#0d1117; border:1px solid #30363d; color:#79c0ff;" placeholder="m³"> a 
-        <input type="number" id="sell-price" style="width:50px; background:#0d1117; border:1px solid #30363d; color:#79c0ff;" placeholder="ISK"> c/u 
+      <b style="color:var(--hud-blue);">MERCADO LIBRE ENTRE PILOTOS</b>
+      <div style="margin: 6px 0; font-size: 0.82em; background: #020710; padding: 6px; border: 1px dashed var(--hud-border);">
+        <b>PUBLICAR ORDEN:</b> Vender 
+        <input type="number" id="sell-amount" style="width:55px; background:#06111f; border:1px solid #1a3c61; color:var(--hud-blue);" placeholder="m³"> a 
+        <input type="number" id="sell-price" style="width:55px; background:#06111f; border:1px solid #1a3c61; color:var(--hud-blue);" placeholder="ISK"> c/u 
         <button class="btn btn-act" onclick="createOrder()">Publicar</button>
       </div>
       <table class="market-table">
         <thead><tr><th>Vendedor</th><th>Cant</th><th>Precio</th><th>Total</th><th>Acción</th></tr></thead>
-        <tbody id="market-tbody"><tr><td colspan="5">Sin ofertas.</td></tr></tbody>
+        <tbody id="market-tbody"><tr><td colspan="5">Sin ofertas activas.</td></tr></tbody>
       </table>
     </div>
 
     <!-- Astillero -->
     <div class="box tab-content" id="tab-shipyard-content" style="display: none;">
-      <b style="color:#388bfd;">ASTILLERO ESPACIAL</b>
+      <b style="color:var(--hud-blue);">ASTILLERO NAVAL</b>
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Fragata 'Rifter'</b><br>30 m³ | 1 Dron | 100 HP<br><span style="color:#7ee787;">Gratis</span><br>
-          <button class="btn btn-ship" onclick="buyShip('frigate')">Abordar</button>
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
+          <b>Fragata 'Rifter'</b><br>30 m³ | 1 Dron | 100 HP<br><span style="color:var(--hud-green);">Gratis / Reposición</span><br>
+          <button class="btn" style="border-color:var(--hud-blue); color:#fff; width:100%; margin-top:4px;" onclick="buyShip('frigate')">Abordar</button>
         </div>
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Carguero 'Mammoth'</b><br>250 m³ | 0 Drones | 180 HP<br><span style="color:#e3b341;">500 ISK</span><br>
-          <button class="btn btn-ship" onclick="buyShip('freighter')">Comprar</button>
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
+          <b>Carguero 'Mammoth'</b><br>250 m³ | 0 Drones | 180 HP<br><span style="color:var(--hud-gold);">500 ISK</span><br>
+          <button class="btn btn-trade" style="width:100%; margin-top:4px;" onclick="buyShip('freighter')">Comprar</button>
         </div>
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Crucero 'Cerberus'</b><br>60 m³ | 3 Drones | 150 HP (+20 dmg)<br><span style="color:#e3b341;">1,200 ISK</span><br>
-          <button class="btn btn-ship" onclick="buyShip('cruiser')">Comprar</button>
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
+          <b>Crucero 'Cerberus'</b><br>60 m³ | 3 Drones | 150 HP (+20 dmg)<br><span style="color:var(--hud-gold);">1,200 ISK</span><br>
+          <button class="btn btn-trade" style="width:100%; margin-top:4px;" onclick="buyShip('cruiser')">Comprar</button>
         </div>
       </div>
     </div>
 
     <!-- Taller de Drones -->
     <div class="box tab-content" id="tab-drones-content" style="display: none;">
-      <b style="color:#7ee787;">FÁBRICA DE DRONES AUTÓNOMOS</b>
+      <b style="color:var(--hud-green);">BAHÍA DE ENSAMBLAJE DE DRONES</b>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Dron de Combate 'Hornet'</b><br>
-          12 DPS por turno en Nullsec/PvE.<br>
-          <span style="color:#e3b341;">150 ISK</span><br>
-          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'combat_drone')">Equipar</button>
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
+          <b>Dron de Combate 'Hornet'</b><br>12 DPS autónomo por ronda en combates.<br><span style="color:var(--hud-gold);">150 ISK</span><br>
+          <button class="btn btn-act" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'combat_drone')">Equipar Dron de Combate</button>
         </div>
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Dron Minero 'Excavator'</b><br>
-          4 m³ cada 5s en cinturón seguro.<br>
-          <span style="color:#e3b341;">120 ISK</span><br>
-          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'mining_drone')">Equipar</button>
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
+          <b>Dron Minero 'Excavator'</b><br>Extrae 4 m³ de mineral cada 5s en cinturón.<br><span style="color:var(--hud-gold);">120 ISK</span><br>
+          <button class="btn btn-act" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'mining_drone')">Equipar Dron Minero</button>
         </div>
       </div>
     </div>
 
     <!-- Misiones PvE -->
     <div class="box tab-content" id="tab-missions-content" style="display: none;">
-      <b style="color:#ff7b72;">CONTRATOS DE CAZARRECOMPENSAS</b>
+      <b style="color:var(--hud-red);">AGENCIA DE CONTRATOS</b>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Caza: Corsaria 'Bloodhound'</b><br>Blanco: 80 HP | +150 ISK + 10 m³<br>
-          <button class="btn btn-mission" onclick="acceptMission('pirate_scout')">Aceptar</button>
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
+          <b>Caza: Fragata 'Bloodhound'</b><br>Blanco: 80 HP | +150 ISK + 10 m³ menas<br>
+          <button class="btn btn-sos" style="margin-top:4px;" onclick="acceptMission('pirate_scout')">Aceptar Contrato</button>
         </div>
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
-          <b>Caza Mayor: 'Vindicator'</b><br>Blanco: 160 HP | +450 ISK + 30 m³<br>
-          <button class="btn btn-mission" onclick="acceptMission('pirate_commander')">Aceptar</button>
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
+          <b>Caza Mayor: Crucero 'Vindicator'</b><br>Blanco: 160 HP | +450 ISK + 30 m³ menas<br>
+          <button class="btn btn-sos" style="margin-top:4px;" onclick="acceptMission('pirate_commander')">Aceptar Contrato</button>
         </div>
       </div>
     </div>
 
     <!-- Habilidades -->
     <div class="box tab-content" id="tab-skills-content" style="display: none;">
-      <div style="display:flex; justify-content:space-between; border-bottom:1px solid #21262d; padding-bottom:4px;">
-        <b style="color:#58a6ff;">NEURO-ENLACE</b>
-        <span id="training-status-txt" style="color:#f0883e; font-size:0.85em;">Sin entrenamiento</span>
+      <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--hud-border); padding-bottom:4px;">
+        <b style="color:var(--hud-blue);">NEURO-ENLACE COGNITIVO</b>
+        <span id="training-status-txt" style="color:var(--hud-gold); font-size:0.85em;">Cola neural libre</span>
       </div>
       <div id="skills-list" style="margin-top:6px;"></div>
     </div>
 
     <!-- Industria -->
     <div class="box tab-content" id="tab-industry-content" style="display: none;">
-      <b style="color:#f0883e;">LÍNEAS DE MONTAJE</b>
+      <b style="color:#ff9e00;">LÍNEAS DE FABRICACIÓN</b>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
           <b>Láser T2</b> (+20 dmg)<br>25 m³ + 100 ISK | 30s<br>
-          <button class="btn btn-ship" onclick="startJob('laser_t2')">Fabricar</button>
+          <button class="btn" style="border-color:var(--hud-blue); color:#fff;" onclick="startJob('laser_t2')">Fabricar</button>
         </div>
-        <div style="background:#010409; border:1px solid #30363d; padding:6px;">
+        <div style="background:#020710; border:1px solid #1a3c61; padding:6px;">
           <b>Crucero 'Cerberus'</b> (150 HP)<br>60 m³ + 300 ISK | 60s<br>
-          <button class="btn btn-ship" onclick="startJob('heavy_cruiser')">Construir</button>
+          <button class="btn" style="border-color:var(--hud-blue); color:#fff;" onclick="startJob('heavy_cruiser')">Construir</button>
         </div>
       </div>
       <div style="margin-top:6px; font-size:0.82em;">
-        <b>Líneas activas:</b>
+        <b>Líneas en proceso:</b>
         <div id="industry-jobs-list">Ninguna.</div>
       </div>
     </div>
   </div>
 
-  <!-- Chat -->
+  <!-- Canal de Comunicaciones -->
   <div class="chat-section">
     <div class="chat-tabs">
       <button class="chat-tab active" id="tab-galaxy" onclick="switchChat('galaxy')">GALAXIA</button>
       <button class="chat-tab" id="tab-local" onclick="switchChat('local')">LOCAL</button>
     </div>
-    <div id="chat-box">--- Conectado ---</div>
+    <div id="chat-box">--- Conexión establecida con la red subespacial ---</div>
     <form class="chat-form" onsubmit="sendChat(event)">
-      <input type="text" id="chat-input" class="chat-input" placeholder="Transmitir..." autocomplete="off">
-      <button type="submit" class="btn btn-act">Enviar</button>
+      <input type="text" id="chat-input" class="chat-input" placeholder="Transmitir a la frecuencia..." autocomplete="off">
+      <button type="submit" class="btn btn-act">Transmitir</button>
     </form>
   </div>
 </div>
@@ -246,6 +350,61 @@
   const socket = io();
   let myPilot = null;
   let activeChannel = 'galaxy';
+  let universeState = null;
+
+  // SINTETIZADOR DE EFECTOS DE SONIDO RETRO (Web Audio API nativo)
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null;
+
+  function initAudio() {
+    if (!audioCtx) audioCtx = new AudioCtx();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function playLaserSound() {
+    initAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(110, audioCtx.currentTime + 0.18);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.18);
+  }
+
+  function playExplosionSound() {
+    initAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(25, audioCtx.currentTime + 0.35);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.35);
+  }
+
+  function playMiningBeep() {
+    initAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(660, audioCtx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.16);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.16);
+  }
 
   const SKILL_CATALOG = [
     { key: 'gunnery', name: 'Balística Espacial', desc: '+10% daño por nivel' },
@@ -255,6 +414,7 @@
   ];
 
   function doLogin() {
+    initAudio();
     const name = document.getElementById('login-name').value;
     const pass = document.getElementById('login-pass').value;
     const errMsg = document.getElementById('login-err-msg');
@@ -307,7 +467,7 @@
     }
   }
 
-  function warpTo(sec) { socket.emit('warp_to', sec); }
+  function warpTo(sec) { initAudio(); socket.emit('warp_to', sec); }
   function buyShip(key) { socket.emit('purchase_ship', key); }
   function acceptMission(id) { socket.emit('accept_mission', id); }
   function trainSkill(k) { socket.emit('train_skill', k); }
@@ -324,7 +484,7 @@
   }
 
   socket.on('chat_broadcast', (d) => {
-    const col = d.channel === 'galaxy' ? '#79c0ff' : '#56d364';
+    const col = d.channel === 'galaxy' ? 'var(--hud-blue)' : 'var(--hud-green)';
     appendChat(`<span style="color:${col};">[${d.channel.toUpperCase()}] <b>${d.sender}:</b></span> ${d.text}`);
   });
 
@@ -332,11 +492,213 @@
     const banner = document.getElementById('sos-zone');
     banner.style.display = 'flex';
     banner.className = 'sos-banner';
-    banner.innerHTML = `<span><b style="color:#f85149;">¡S.O.S.!</b> ${d.pilot} bajo fuego en ${d.sectorName}.</span><button class="btn btn-sos" onclick="warpTo('${d.sectorId}')">SALTAR</button>`;
+    banner.innerHTML = `<span><b style="color:var(--hud-red);">¡S.O.S. ALERTA ROJA!</b> ${d.pilot} bajo fuego en ${d.sectorName}.</span><button class="btn btn-sos" onclick="warpTo('${d.sectorId}')">SALTAR EN AUXILIO</button>`;
     setTimeout(() => { banner.style.display = 'none'; }, 12000);
   });
 
+  // GESTIÓN DE EFECTOS VISUALES Y NÚMEROS FLOTANTES
+  let activeLaserEffect = null;
+
+  socket.on('action_fx', (fx) => {
+    const fxLayer = document.getElementById('fx-layer');
+    const span = document.createElement('span');
+    span.className = 'float-num';
+
+    if (fx.type === 'mining_laser') {
+      playMiningBeep();
+      span.style.color = '#39ff14';
+      span.innerText = `+${fx.yield} ${fx.mineral}`;
+      span.style.left = '52%';
+      span.style.top = '40%';
+      activeLaserEffect = { type: 'mining', timer: 20 };
+    } else if (fx.type === 'laser_fire') {
+      playLaserSound();
+      span.style.color = '#ffd700';
+      span.innerText = `-${fx.damage} HP`;
+      span.style.left = '65%';
+      span.style.top = '30%';
+      activeLaserEffect = { type: 'combat_out', timer: 25 };
+    } else if (fx.type === 'under_fire') {
+      playExplosionSound();
+      span.style.color = '#ff3131';
+      span.innerText = `-${fx.damage} IMPACTO`;
+      span.style.left = '45%';
+      span.style.top = '50%';
+
+      // Sacudida visual de daño
+      const cockpit = document.getElementById('cockpit-frame');
+      cockpit.classList.add('red-alert-active');
+      setTimeout(() => cockpit.classList.remove('red-alert-active'), 600);
+      activeLaserEffect = { type: 'combat_in', timer: 25 };
+    }
+
+    fxLayer.appendChild(span);
+    setTimeout(() => span.remove(), 1400);
+  });
+
+  // RADAR TÁCTICO 2D (Renderizado a 30 FPS en Canvas)
+  const radarCanvas = document.getElementById('tactical-radar');
+  const rCtx = radarCanvas.getContext('2d');
+  let radarAngle = 0;
+
+  function renderRadar() {
+    const w = radarCanvas.width;
+    const h = radarCanvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+
+    rCtx.clearRect(0, 0, w, h);
+
+    // Círculos concéntricos de rango táctico
+    rCtx.strokeStyle = 'rgba(0, 210, 255, 0.15)';
+    rCtx.lineWidth = 1;
+    [40, 80, 120].forEach(r => {
+      rCtx.beginPath();
+      rCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      rCtx.stroke();
+    });
+
+    // Ejes cardinales
+    rCtx.beginPath();
+    rCtx.moveTo(cx - 125, cy); rCtx.lineTo(cx + 125, cy);
+    rCtx.moveTo(cx, cy - 125); rCtx.lineTo(cx, cy + 125);
+    rCtx.stroke();
+
+    // Línea de barrido de radar rotativa
+    radarAngle += 0.03;
+    rCtx.save();
+    rCtx.translate(cx, cy);
+    rCtx.rotate(radarAngle);
+    rCtx.strokeStyle = 'rgba(0, 210, 255, 0.4)';
+    rCtx.beginPath();
+    rCtx.moveTo(0, 0);
+    rCtx.lineTo(0, 120);
+    rCtx.stroke();
+    rCtx.restore();
+
+    // Nave del jugador (Triángulo verde en el centro)
+    rCtx.fillStyle = '#39ff14';
+    rCtx.beginPath();
+    rCtx.moveTo(cx, cy - 8);
+    rCtx.lineTo(cx - 6, cy + 6);
+    rCtx.lineTo(cx + 6, cy + 6);
+    rCtx.closePath();
+    rCtx.fill();
+
+    // Dibujar elementos del sector activo
+    if (universeState && myPilot) {
+      const me = universeState.players[socket.id];
+      if (me) {
+        // 1. Drones orbitando al jugador si están desplegados
+        if (me.dronesDeployed && ((me.drones?.combat || 0) + (me.drones?.mining || 0)) > 0) {
+          const droneAngle = Date.now() * 0.003;
+          const dx = cx + Math.cos(droneAngle) * 26;
+          const dy = cy + Math.sin(droneAngle) * 26;
+          rCtx.fillStyle = '#00d2ff';
+          rCtx.beginPath();
+          rCtx.arc(dx, dy, 3, 0, Math.PI * 2);
+          rCtx.fill();
+        }
+
+        // 2. Sector de Minería (Asteroide en rango)
+        if (me.sector === 'mining') {
+          const astX = cx + 75;
+          const astY = cy - 35;
+          rCtx.fillStyle = '#9e8c6c';
+          rCtx.beginPath();
+          rCtx.arc(astX, astY, 9, 0, Math.PI * 2);
+          rCtx.fill();
+          rCtx.fillStyle = '#ffd700';
+          rCtx.font = '10px Courier';
+          rCtx.fillText("Asteroide V-4", astX + 12, astY + 4);
+
+          // Rayo de minería si está activo
+          if (activeLaserEffect && activeLaserEffect.type === 'mining') {
+            rCtx.strokeStyle = 'rgba(57, 255, 20, 0.8)';
+            rCtx.lineWidth = 2;
+            rCtx.beginPath();
+            rCtx.moveTo(cx, cy);
+            rCtx.lineTo(astX, astY);
+            rCtx.stroke();
+            activeLaserEffect.timer--;
+            if (activeLaserEffect.timer <= 0) activeLaserEffect = null;
+          }
+        }
+
+        // 3. Nullsec (Pecios, Veta Volátil y Rivales)
+        if (me.sector === 'nullsec') {
+          // Veta volátil
+          const volX = cx - 70;
+          const volY = cy - 40;
+          rCtx.fillStyle = '#ff9e00';
+          rCtx.beginPath();
+          rCtx.arc(volX, volY, 7, 0, Math.PI * 2);
+          rCtx.fill();
+          rCtx.font = '10px Courier';
+          rCtx.fillText("Bistrimita Volátil", volX - 90, volY);
+
+          // Pecios
+          const currentSec = universeState.sectors.nullsec;
+          if (currentSec.wrecks) {
+            currentSec.wrecks.forEach((w, i) => {
+              const wx = cx + 55 + (i * 18);
+              const wy = cy + 45;
+              rCtx.fillStyle = '#ffd700';
+              rCtx.fillRect(wx - 3, wy - 3, 6, 6);
+              rCtx.fillText("Pecio", wx + 6, wy + 3);
+            });
+          }
+
+          // Otras naves en Nullsec
+          for (let pid in universeState.players) {
+            if (pid !== socket.id && universeState.players[pid].sector === 'nullsec') {
+              const other = universeState.players[pid];
+              const ox = cx + 80;
+              const oy = cy - 20;
+              rCtx.fillStyle = other.corp === me.corp && me.corp !== "Sin Corp" ? '#00d2ff' : '#ff3131';
+              rCtx.beginPath();
+              rCtx.arc(ox, oy, 5, 0, Math.PI * 2);
+              rCtx.fill();
+              rCtx.fillText(`[${other.corp}] ${other.name}`, ox + 8, oy + 3);
+            }
+          }
+        }
+
+        // 4. Misión PvE (Blanco pirata)
+        if (me.sector === 'pve' && universeState.pveEncounters && universeState.pveEncounters[me.name]) {
+          const enc = universeState.pveEncounters[me.name];
+          const px = cx + 85;
+          const py = cy - 15;
+          rCtx.fillStyle = '#ff3131';
+          rCtx.beginPath();
+          rCtx.arc(px, py, 7, 0, Math.PI * 2);
+          rCtx.fill();
+          rCtx.font = '11px Courier';
+          rCtx.fillText(`HOSTIL: ${enc.targetName}`, px + 10, py + 4);
+
+          // Efecto de disparo
+          if (activeLaserEffect) {
+            rCtx.lineWidth = 2;
+            if (activeLaserEffect.type === 'combat_out') {
+              rCtx.strokeStyle = 'rgba(255, 215, 0, 0.9)';
+              rCtx.beginPath(); rCtx.moveTo(cx, cy); rCtx.lineTo(px, py); rCtx.stroke();
+            } else if (activeLaserEffect.type === 'combat_in') {
+              rCtx.strokeStyle = 'rgba(255, 49, 49, 0.9)';
+              rCtx.beginPath(); rCtx.moveTo(px, py); rCtx.lineTo(cx, cy); rCtx.stroke();
+            }
+            activeLaserEffect.timer--;
+            if (activeLaserEffect.timer <= 0) activeLaserEffect = null;
+          }
+        }
+      }
+    }
+
+    requestAnimationFrame(renderRadar);
+  }
+  renderRadar();
+
   socket.on('universe_tick', (data) => {
+    universeState = data;
     if (!myPilot) return;
     const me = data.players[socket.id];
     if (!me) return;
@@ -344,7 +706,7 @@
     const currentSec = data.sectors[me.sector] || { name: "Sector de Misión" };
     const shipInfo = data.shipCatalog ? data.shipCatalog[me.shipKey] : null;
 
-    document.getElementById('sector-title').innerText = currentSec.name;
+    document.getElementById('sector-title').innerText = currentSec.name.toUpperCase();
     document.getElementById('my-name').innerText = `[PILOTO] ${me.name}`;
     document.getElementById('my-corp').innerText = `[${me.corp}]`;
     document.getElementById('my-ship').innerText = shipInfo ? shipInfo.name : me.shipKey;
@@ -376,14 +738,14 @@
     document.getElementById('drone-desc').innerText = `Combate: ${me.drones?.combat || 0} | Mineros: ${me.drones?.mining || 0}`;
     const btnToggle = document.getElementById('btn-drone-toggle');
     btnToggle.innerText = me.dronesDeployed ? "Retirar Drones" : "Desplegar Drones";
-    btnToggle.style.color = me.dronesDeployed ? "#ff7b72" : "#7ee787";
+    btnToggle.style.color = me.dronesDeployed ? "var(--hud-red)" : "var(--hud-green)";
 
     document.getElementById('bar-shield').style.width = me.shield + '%';
     document.getElementById('bar-armor').style.width = Math.round((me.armor / (me.maxArmor || 100)) * 100) + '%';
     document.getElementById('bar-cap').style.width = me.cap + '%';
     document.getElementById('bar-cargo').style.width = Math.min(100, Math.round((totalCargo / (me.cargoMax || 30)) * 100)) + '%';
 
-    // Botón de salto de misión
+    // Salto a misión
     const btnMission = document.getElementById('btn-warp-mission');
     btnMission.style.display = (me.activeMission && (me.sector === 'station' || me.sector === 'outpost')) ? 'block' : 'none';
 
@@ -415,70 +777,70 @@
       const statusTxt = document.getElementById('training-status-txt');
       if (me.training) {
         const rem = Math.max(0, Math.round((me.training.finishAt - now) / 1000));
-        statusTxt.innerHTML = `<b style="color:#58a6ff;">⚙ ${me.training.skillName} ${me.training.targetLevel} (${rem}s)</b>`;
+        statusTxt.innerHTML = `<b style="color:var(--hud-blue);">⚙ ${me.training.skillName} ${me.training.targetLevel} (${rem}s)</b>`;
       } else {
         statusTxt.innerText = "Cola neural libre";
       }
 
       document.getElementById('skills-list').innerHTML = SKILL_CATALOG.map(sk => {
         const cur = me.skills ? (me.skills[sk.key] || 0) : 0;
-        let btn = cur >= 5 ? `<span style="color:#7ee787;">MAESTRÍA</span>` :
-          (me.training?.skillKey === sk.key ? `<span style="color:#f0883e;">EN COLA...</span>` :
-          `<button class="btn btn-ship" onclick="trainSkill('${sk.key}')" ${me.training ? 'disabled':''}>Entrenar Nivel ${cur+1}</button>`);
-        return `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #21262d; padding:4px 0; font-size:0.8em;"><span><b>${sk.name}</b> [Nvl ${cur}/5] - <small style="color:#8b949e;">${sk.desc}</small></span><div>${btn}</div></div>`;
+        let btn = cur >= 5 ? `<span style="color:var(--hud-green);">MAESTRÍA</span>` :
+          (me.training?.skillKey === sk.key ? `<span style="color:var(--hud-gold);">EN COLA...</span>` :
+          `<button class="btn" style="border-color:var(--hud-blue); color:#fff;" onclick="trainSkill('${sk.key}')" ${me.training ? 'disabled':''}>Entrenar Nivel ${cur+1}</button>`);
+        return `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed var(--hud-border); padding:4px 0; font-size:0.8em;"><span><b>${sk.name}</b> [Nvl ${cur}/5] - <small style="color:#628ea6;">${sk.desc}</small></span><div>${btn}</div></div>`;
       }).join('');
 
       // Mercado
       document.getElementById('market-tbody').innerHTML = (data.market || []).map(o => {
         const isMine = o.seller === me.name;
         const tot = o.amount * o.pricePerUnit;
-        const btn = isMine ? `<button class="btn btn-sos" onclick="socket.emit('cancel_market_order', ${o.orderId})">Cancelar</button>` : `<button class="btn btn-ship" onclick="socket.emit('buy_market_order', ${o.orderId})">Comprar</button>`;
+        const btn = isMine ? `<button class="btn btn-sos" onclick="socket.emit('cancel_market_order', ${o.orderId})">Cancelar</button>` : `<button class="btn btn-act" onclick="socket.emit('buy_market_order', ${o.orderId})">Comprar</button>`;
         return `<tr><td>[${o.corp}] ${o.seller}</td><td>${o.amount} m³</td><td>${o.pricePerUnit} ISK</td><td>${tot} ISK</td><td>${btn}</td></tr>`;
-      }).join('') || `<tr><td colspan="5" style="color:#8b949e;">Sin ofertas.</td></tr>`;
+      }).join('') || `<tr><td colspan="5" style="color:#628ea6;">Sin ofertas activas.</td></tr>`;
 
       // Industria
       document.getElementById('industry-jobs-list').innerHTML = (data.industryJobs || []).filter(j => j.pilot === me.name).map(j => {
         const rem = Math.max(0, Math.round((j.completesAt - now) / 1000));
         return rem === 0 || j.completed ? `<div>✔ <b>${j.blueprintName}</b> <button class="btn btn-act" onclick="claimJob(${j.jobId})">Entregar</button></div>` : `<div>⚙ ${j.blueprintName} (${rem}s)</div>`;
-      }).join('') || `<span style="color:#8b949e;">Ninguna.</span>`;
+      }).join('') || `<span style="color:#628ea6;">Ninguna.</span>`;
 
       actionsBox.innerHTML = `
-        <b style="color:#58a6ff;">SERVICIOS GENERALES:</b> 
+        <b style="color:var(--hud-blue);">SERVICIOS DE ESTACIÓN:</b> 
         <button class="btn" onclick="socket.emit('repair')">Reparar Casco (50 ISK)</button>
-        <button class="btn" onclick="setCorporation()">Gestionar Corporación</button>
+        <button class="btn" onclick="setCorporation()">Gestionar Alianza / Corp</button>
       `;
     } else if (me.sector === 'mining') {
       stationInterface.style.display = 'none';
       wrecksBox.style.display = 'none';
       actionsBox.innerHTML = `
-        <b style="color:#56d364;">CINTURÓN DE EXTRACCIÓN (Asteroide: ${currentSec.asteroidHp}%):</b><br>
-        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser Manual</button>
-        <span style="font-size:0.8em; margin-left:8px; color:#7ee787;">(Drones extraen en paralelo si están desplegados)</span>
+        <b style="color:var(--hud-green);">CINTURÓN DE EXTRACCIÓN (Asteroide: ${currentSec.asteroidHp}%):</b><br>
+        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">⚡ Disparar Láser de Minería</button>
+        <span style="font-size:0.8em; margin-left:8px; color:var(--hud-green);">(Tus drones extraen automáticamente si están desplegados)</span>
       `;
     } else if (me.sector === 'nullsec') {
       stationInterface.style.display = 'none';
       const sov = currentSec.sovereignty;
       actionsBox.innerHTML = `
-        <div style="border-bottom: 1px dashed #30363d; padding-bottom: 4px; margin-bottom: 4px;">
-          SOBERANÍA DEL PASO: <b style="color:#f0883e;">[${sov.ownerCorp}]</b> (${sov.progress}%)
-          <button class="btn btn-ship" onclick="socket.emit('capture_sov')">Reclamar Baliza</button>
+        <div style="border-bottom: 1px dashed var(--hud-border); padding-bottom: 4px; margin-bottom: 4px;">
+          SOBERANÍA TERRITORIAL: <b style="color:var(--hud-gold);">[${sov.ownerCorp}]</b> (${sov.progress}%)
+          <button class="btn" style="border-color:var(--hud-gold); color:var(--hud-gold);" onclick="socket.emit('capture_sov')">Reclamar Baliza</button>
         </div>
-        <div style="background:#261704; border:1px solid #d29922; padding:6px; margin-bottom:6px;">
-          <b style="color:#f0883e;">VETA DE BISTRIMITA VOLÁTIL (120 ISK/m³):</b>
-          <button class="btn btn-volatile" onclick="socket.emit('mine_volatile_cycle')">⚡ Cosechar Bistrimita (Sobrecarga y Firma Visible)</button>
+        <div style="background:#221200; border:1px solid #f0883e; padding:6px; margin-bottom:6px;">
+          <b style="color:#ff9e00;">VETA DE BISTRIMITA VOLÁTIL (120 ISK/m³):</b>
+          <button class="btn btn-volatile" onclick="socket.emit('mine_volatile_cycle')">⚡ Cosechar Bistrimita (Riesgo de Sobrecarga)</button>
         </div>
-        <b style="color:#ff7b72;">¡ZONA DE RIESGO! (Reloj: ${currentSec.timer}s - Ronda ${currentSec.round})</b><br>
+        <b style="color:var(--hud-red);">¡SECTOR HOSTIL! (Reloj de Turno: ${currentSec.timer}s - Ronda ${currentSec.round})</b><br>
         <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Salva (-25 Gj)</button>
         <button class="btn" onclick="socket.emit('set_order', 'defense')">Reforzar Escudo (-20 Gj)</button>
         <button class="btn btn-sos" onclick="socket.emit('send_sos')">Emitir S.O.S.</button>
-        <span style="font-size:0.8em; margin-left:8px; color:#f0883e;">Orden: ${me.order.toUpperCase()}</span>
+        <span style="font-size:0.8em; margin-left:8px; color:var(--hud-gold);">Orden activa: ${me.order.toUpperCase()}</span>
       `;
 
       if (currentSec.wrecks && currentSec.wrecks.length > 0) {
         wrecksBox.style.display = 'block';
-        wrecksBox.innerHTML = `<b style="color:#e3b341;">PECIOS SAQUEABLES:</b>` +
+        wrecksBox.innerHTML = `<b style="color:var(--hud-gold);">PECIOS EN RADAR:</b>` +
           currentSec.wrecks.map(w => `
-            <div style="background:#161b22; border:1px dashed #e3b341; padding:4px 8px; margin-top:4px; display:flex; justify-content:space-between; align-items:center; font-size:0.8em;">
+            <div style="background:#020710; border:1px dashed var(--hud-gold); padding:4px 8px; margin-top:4px; display:flex; justify-content:space-between; align-items:center; font-size:0.8em;">
               <span>${w.name} (+${w.bistrimite || 0} Bistrimita, +${w.ore} Menas)</span>
               <button class="btn btn-trade" onclick="socket.emit('loot_wreck', ${w.id})">Saquear</button>
             </div>
@@ -493,17 +855,17 @@
       if (enc) {
         const npcPct = Math.round((enc.npcArmor / enc.npcMaxArmor) * 100);
         actionsBox.innerHTML = `
-          <div style="background:#1c0d0d; border:1px solid #da3633; padding:6px; margin-bottom:6px;">
-            <div style="display:flex; justify-content:space-between; color:#ff7b72; font-weight:bold; font-size:0.85em;">
-              <span>[BLANCO] ${enc.targetName}</span>
+          <div style="background:#280808; border:1px solid var(--hud-red); padding:6px; margin-bottom:6px;">
+            <div style="display:flex; justify-content:space-between; color:var(--hud-red); font-weight:bold; font-size:0.85em;">
+              <span>[OBJETIVO] ${enc.targetName}</span>
               <span>${enc.npcArmor} / ${enc.npcMaxArmor} HP</span>
             </div>
-            <div class="bar-track"><div class="bar-fill npc-fill" style="width:${npcPct}%;"></div></div>
+            <div class="bar-track"><div class="bar-fill" style="background:var(--hud-red); width:${npcPct}%;"></div></div>
           </div>
-          <b style="color:#f0883e;">TURNO PVE // RELOJ: ${enc.timer}s (Ronda ${enc.round})</b><br>
-          <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar (-25 Gj)</button>
-          <button class="btn" onclick="socket.emit('set_order', 'defense')">Regenerar (-20 Gj)</button>
-          <span style="font-size:0.8em; margin-left:8px; color:#f0883e;">Orden: ${me.order.toUpperCase()}</span>
+          <b style="color:var(--hud-gold);">RONDA DE INTERCEPCIÓN ${enc.round} // RELOJ: ${enc.timer}s</b><br>
+          <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Abrir Fuego (-25 Gj)</button>
+          <button class="btn" onclick="socket.emit('set_order', 'defense')">Regenerar Escudos (-20 Gj)</button>
+          <span style="font-size:0.8em; margin-left:8px; color:var(--hud-gold);">Orden activa: ${me.order.toUpperCase()}</span>
         `;
       }
     }
@@ -511,7 +873,7 @@
 
   socket.on('ship_destroyed', (m) => alert(m));
   socket.on('combat_log', (logs) => {
-    appendChat(`<span style="color:#f0883e;"><b>[COMBATE]:</b></span>`);
+    appendChat(`<span style="color:var(--hud-gold);"><b>[COMBATE REGISTRADO]:</b></span>`);
     logs.forEach(l => appendChat(`> ${l}`));
   });
 </script>

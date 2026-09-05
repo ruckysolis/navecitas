@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
-const fs = require('fs');
+const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 
 const app = express();
@@ -10,12 +10,67 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const DB_FILE = path.join(__dirname, 'pilots.json');
+// -------------------------------------------------------------
+// CONEXIÓN A MONGODB ATLAS
+// Lee la variable de entorno de Render o usa el enlace directo de respaldo
+// -------------------------------------------------------------
+const MONGO_URI = process.env.MONGO_URI || "PEGA_AQUI_TU_ENLACE_DE_MONGODB_ATLAS";
 
+mongoose.connect(MONGO_URI)
+  .then(() => console.log(">>> [BD EN LA NUBE]: Conexión exitosa a MongoDB Atlas <<<"))
+  .catch(err => console.error("Error al conectar a MongoDB:", err.message));
+
+// Esquemas y Modelos de MongoDB
+const PilotSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  corp: { type: String, default: "Sin Corp" },
+  wallet: { type: Number, default: 300 },
+  ore: { type: Number, default: 10 },
+  armor: { type: Number, default: 100 },
+  baseMaxArmor: { type: Number, default: 100 },
+  maxArmor: { type: Number, default: 100 },
+  shield: { type: Number, default: 100 },
+  weaponBonus: { type: Number, default: 0 },
+  skills: {
+    gunnery: { type: Number, default: 0 },
+    armor_upgrade: { type: Number, default: 0 },
+    mining_efficiency: { type: Number, default: 0 }
+  },
+  training: {
+    skillKey: String,
+    skillName: String,
+    targetLevel: Number,
+    finishAt: Number
+  },
+  activeMission: { type: String, default: null }
+});
+
+const MarketOrderSchema = new mongoose.Schema({
+  orderId: Number,
+  seller: String,
+  corp: String,
+  amount: Number,
+  pricePerUnit: Number
+});
+
+const IndustryJobSchema = new mongoose.Schema({
+  jobId: Number,
+  pilot: String,
+  bpKey: String,
+  blueprintName: String,
+  completesAt: Number,
+  completed: { type: Boolean, default: false }
+});
+
+const Pilot = mongoose.model('Pilot', PilotSchema);
+const MarketOrder = mongoose.model('MarketOrder', MarketOrderSchema);
+const IndustryJob = mongoose.model('IndustryJob', IndustryJobSchema);
+
+// Catálogos estáticos
 const SKILL_DEFS = {
-  'gunnery': { name: "Balística Espacial", desc: "+10% daño en combate por nivel", baseTimeSec: 30, maxLevel: 5 },
-  'armor_upgrade': { name: "Gestión de Blindaje", desc: "+15 HP de casco por nivel", baseTimeSec: 40, maxLevel: 5 },
-  'mining_efficiency': { name: "Extracción Minera", desc: "+2 m³ de mineral extra por nivel", baseTimeSec: 25, maxLevel: 5 }
+  'gunnery': { name: "Balística Espacial", desc: "+10% daño por nivel", baseTimeSec: 30, maxLevel: 5 },
+  'armor_upgrade': { name: "Gestión de Blindaje", desc: "+15 HP casco por nivel", baseTimeSec: 40, maxLevel: 5 },
+  'mining_efficiency': { name: "Extracción Minera", desc: "+2 m³ mineral por nivel", baseTimeSec: 25, maxLevel: 5 }
 };
 
 const BLUEPRINTS = {
@@ -23,55 +78,14 @@ const BLUEPRINTS = {
   'heavy_cruiser': { name: "Crucero de Asalto 'Cerberus'", type: 'ship', oreCost: 60, fee: 300, buildTimeSec: 60 }
 };
 
-// Misiones PvE disponibles
 const MISSIONS_CATALOG = {
-  'pirate_scout': {
-    id: 'pirate_scout',
-    title: "Caza: Explorador Pirata",
-    targetName: "Fragata Corsaria 'Bloodhound'",
-    hp: 80,
-    dmg: 18,
-    bounty: 150,
-    lootOre: 10
-  },
-  'pirate_commander': {
-    id: 'pirate_commander',
-    title: "Caza de Alto Riesgo: Comandante Vindicator",
-    targetName: "Crucero Pirata 'Vindicator'",
-    hp: 160,
-    dmg: 28,
-    bounty: 450,
-    lootOre: 30
-  }
+  'pirate_scout': { id: 'pirate_scout', title: "Caza: Explorador Pirata", targetName: "Fragata Corsaria 'Bloodhound'", hp: 80, dmg: 18, bounty: 150, lootOre: 10 },
+  'pirate_commander': { id: 'pirate_commander', title: "Caza Mayor: 'Vindicator'", targetName: "Crucero Pirata 'Vindicator'", hp: 160, dmg: 28, bounty: 450, lootOre: 30 }
 };
 
-function loadDatabase() {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ pilots: {}, market: [], industryJobs: [] }));
-  }
-  try {
-    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    return {
-      pilots: data.pilots || data,
-      market: data.market || [],
-      industryJobs: data.industryJobs || []
-    };
-  } catch (e) {
-    return { pilots: {}, market: [], industryJobs: [] };
-  }
-}
-
-function saveDatabase(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
-
-let dbData = loadDatabase();
-let dbPilots = dbData.pilots;
-let marketOrders = dbData.market;
-let industryJobs = dbData.industryJobs;
-
+// Estado volátil en memoria RAM para bajas latencias en combate
 const universe = {
-  players: {},
+  players: {}, // socket.id -> jugador activo
   sectors: {
     'station': { name: "Estación Central Jita", type: "safe" },
     'mining': { name: "Cinturón Veldspar-4", type: "mining", asteroidHp: 100 },
@@ -84,35 +98,75 @@ const universe = {
       sovereignty: { ownerCorp: "Ninguna", progress: 0 }
     }
   },
-  pveEncounters: {} // pilotName -> estado del encuentro PvE
+  pveEncounters: {}
 };
 
+// Cache de mercado y de trabajos para sincronizar con clientes
+let cachedMarket = [];
+let cachedJobs = [];
+
+async function refreshDBCache() {
+  try {
+    cachedMarket = await MarketOrder.find({});
+    cachedJobs = await IndustryJob.find({});
+  } catch (e) {
+    console.error("Error al actualizar cache de BD:", e.message);
+  }
+}
+refreshDBCache();
+
+// Guardar un piloto de memoria a MongoDB Atlas de forma segura
+async function syncPilotToCloud(p) {
+  if (!p || !p.name) return;
+  try {
+    await Pilot.findOneAndUpdate(
+      { name: p.name },
+      {
+        corp: p.corp,
+        wallet: p.wallet,
+        ore: p.ore,
+        armor: p.armor,
+        baseMaxArmor: p.baseMaxArmor,
+        maxArmor: p.maxArmor,
+        shield: p.shield,
+        weaponBonus: p.weaponBonus,
+        skills: p.skills,
+        training: p.training,
+        activeMission: p.activeMission
+      },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error("Error sincronizando piloto en Atlas:", err.message);
+  }
+}
+
 // Bucle maestro del servidor
-setInterval(() => {
+setInterval(async () => {
   const now = Date.now();
 
-  // 1. Entrenamiento pasivo de habilidades
-  for (let pilotName in dbPilots) {
-    const pData = dbPilots[pilotName];
-    if (pData.training && pData.training.skillKey) {
-      if (now >= pData.training.finishAt) {
-        const skillKey = pData.training.skillKey;
-        pData.skills = pData.skills || { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0 };
-        pData.skills[skillKey] = (pData.skills[skillKey] || 0) + 1;
-        const learnedName = SKILL_DEFS[skillKey].name;
-        const newLvl = pData.skills[skillKey];
-        pData.training = null;
+  // 1. Verificar entrenamientos de habilidades en pilotos activos y en BD
+  for (let id in universe.players) {
+    const p = universe.players[id];
+    if (p.training && now >= p.training.finishAt) {
+      const skKey = p.training.skillKey;
+      p.skills = p.skills || { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0 };
+      p.skills[skKey] = (p.skills[skKey] || 0) + 1;
+      const skName = SKILL_DEFS[skKey]?.name || skKey;
+      const newLvl = p.skills[skKey];
+      p.training = null;
 
-        const connectedPlayer = Object.values(universe.players).find(p => p.name === pilotName);
-        if (connectedPlayer) {
-          connectedPlayer.skills = pData.skills;
-          connectedPlayer.training = null;
-          connectedPlayer.maxArmor = (connectedPlayer.baseMaxArmor || 100) + (connectedPlayer.skills.armor_upgrade * 15);
-          const sock = io.sockets.sockets.get(connectedPlayer.id);
-          if (sock) {
-            sock.emit('chat_broadcast', { channel: 'local', sender: 'NEURO-ENLACE', text: `¡Habilidad aprendida! [${learnedName} Nivel ${newLvl}].` });
-          }
-        }
+      // Recalcular blindaje pasivo
+      p.maxArmor = (p.baseMaxArmor || 100) + (p.skills.armor_upgrade * 15);
+      syncPilotToCloud(p);
+
+      const sock = io.sockets.sockets.get(p.id);
+      if (sock) {
+        sock.emit('chat_broadcast', {
+          channel: 'local',
+          sender: 'NEURO-ENLACE',
+          text: `¡Entrenamiento completado en la nube! [${skName} Nivel ${newLvl}].`
+        });
       }
     }
   }
@@ -130,7 +184,7 @@ setInterval(() => {
     universe.sectors.nullsec.timer = 20;
   }
 
-  // 3. Resolución de combates PvE individuales
+  // 3. Combate PvE
   for (let pilotName in universe.pveEncounters) {
     const enc = universe.pveEncounters[pilotName];
     const player = Object.values(universe.players).find(p => p.name === pilotName && p.sector === 'pve');
@@ -144,54 +198,37 @@ setInterval(() => {
     }
   }
 
-  // 4. Industria
-  industryJobs.forEach(job => {
+  // 4. Chequeo de industria
+  cachedJobs.forEach(async (job) => {
     if (!job.completed && now >= job.completesAt) {
       job.completed = true;
-      const pilotSocket = Object.values(universe.players).find(p => p.name === job.pilot);
-      if (pilotSocket) {
-        const sock = io.sockets.sockets.get(pilotSocket.id);
-        if (sock) {
-          sock.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `¡[${job.blueprintName}] listo en hangar!` });
-        }
+      await IndustryJob.updateOne({ jobId: job.jobId }, { completed: true });
+      const p = Object.values(universe.players).find(p => p.name === job.pilot);
+      if (p) {
+        const sock = io.sockets.sockets.get(p.id);
+        if (sock) sock.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `¡[${job.blueprintName}] listo para entrega!` });
       }
     }
   });
 
-  // Guardar en disco periódicamente
+  // 5. Autoguardado periódico en la nube de pilotos conectados
   for (let id in universe.players) {
-    const p = universe.players[id];
-    if (dbPilots[p.name]) {
-      dbPilots[p.name].wallet = p.wallet;
-      dbPilots[p.name].ore = p.ore;
-      dbPilots[p.name].armor = p.armor;
-      dbPilots[p.name].shield = p.shield;
-      dbPilots[p.name].corp = p.corp;
-      dbPilots[p.name].baseMaxArmor = p.baseMaxArmor || 100;
-      dbPilots[p.name].maxArmor = p.maxArmor;
-      dbPilots[p.name].weaponBonus = p.weaponBonus || 0;
-      dbPilots[p.name].skills = p.skills;
-      dbPilots[p.name].training = p.training;
-      dbPilots[p.name].activeMission = p.activeMission || null;
-    }
+    syncPilotToCloud(universe.players[id]);
   }
-  saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
 
   io.emit('universe_tick', {
     sectors: universe.sectors,
     players: universe.players,
-    market: marketOrders,
-    industryJobs: industryJobs,
+    market: cachedMarket,
+    industryJobs: cachedJobs,
     pveEncounters: universe.pveEncounters
   });
 }, 1000);
 
-// Resolución PvE por turnos
 function resolvePveTurn(player, enc) {
   player.cap = Math.min(100, player.cap + 15);
   let logs = [];
 
-  // Acción del jugador
   if (player.order === 'attack' && player.cap >= 25) {
     player.cap -= 25;
     let baseDmg = 30 + (player.weaponBonus || 0);
@@ -209,13 +246,13 @@ function resolvePveTurn(player, enc) {
   }
   player.order = 'none';
 
-  // Victoria del jugador
   if (enc.npcArmor <= 0) {
     player.wallet += enc.bounty;
     player.ore += enc.lootOre;
     player.activeMission = null;
     delete universe.pveEncounters[player.name];
     player.sector = 'station';
+    syncPilotToCloud(player);
 
     const sock = io.sockets.sockets.get(player.id);
     if (sock) {
@@ -224,19 +261,17 @@ function resolvePveTurn(player, enc) {
       sock.emit('chat_broadcast', {
         channel: 'local',
         sender: 'AGENCIA',
-        text: `¡OBJETIVO DESTRUIDO! Recompensa cobrada: +${enc.bounty} ISK y +${enc.lootOre} m³ de mineral recuperados.`
+        text: `¡OBJETIVO DESTRUIDO! Recompensa cobrada: +${enc.bounty} ISK y +${enc.lootOre} m³ de mineral.`
       });
     }
     return;
   }
 
-  // Respuesta del NPC
   let npcDmg = enc.dmg;
   if (player.order === 'defense') npcDmg = Math.round(npcDmg * 0.6);
   applyDamage(player, npcDmg);
   logs.push(`${enc.targetName} respondió fuego (-${npcDmg} daño).`);
 
-  // Derrota del jugador frente al NPC
   if (player.armor <= 0) {
     delete universe.pveEncounters[player.name];
     player.activeMission = null;
@@ -244,12 +279,13 @@ function resolvePveTurn(player, enc) {
     player.sector = 'station';
     player.armor = 25;
     player.shield = 0;
+    syncPilotToCloud(player);
 
     const sock = io.sockets.sockets.get(player.id);
     if (sock) {
       sock.leave('pve');
       sock.join('station');
-      sock.emit('ship_destroyed', `Tu nave fue destruida por ${enc.targetName}. Cápsula de escape transferida a Jita.`);
+      sock.emit('ship_destroyed', `Tu nave fue destruida por ${enc.targetName}. Cápsula eyectada a Jita.`);
     }
     return;
   }
@@ -274,7 +310,7 @@ function resolveCombat(combatants) {
       let totalDmg = Math.round((baseDmg + (attacker.weaponBonus || 0)) * skillBonus);
 
       applyDamage(target, totalDmg);
-      logs.push(`[${attacker.corp}] ${attacker.name} disparó a [${target.corp}] ${target.name} (-${totalDmg} daño).`);
+      logs.push(`[${attacker.corp}] ${attacker.name} impactó a [${target.corp}] ${target.name} (-${totalDmg} daño).`);
 
       if (target.armor <= 0) {
         handleDestruction(target, attacker);
@@ -282,7 +318,7 @@ function resolveCombat(combatants) {
     } else if (attacker.order === 'defense' && attacker.cap >= 20) {
       attacker.cap -= 20;
       attacker.shield = Math.min(100, attacker.shield + 20);
-      logs.push(`${attacker.name} reforzó escudos.`);
+      logs.push(`${attacker.name} reforzó defensas.`);
     }
     attacker.order = 'none';
   });
@@ -317,7 +353,7 @@ function handleDestruction(victim, killer) {
   io.emit('chat_broadcast', {
     channel: 'galaxy',
     sender: 'BAJA CONFIRMADA',
-    text: `Flota de [${killer.corp}] pulverizó la nave de [${victim.corp}] ${victim.name} en Nullsec.`
+    text: `Flota de [${killer.corp}] destruyó a [${victim.corp}] ${victim.name} en Nullsec.`
   });
 
   victim.ore = 0;
@@ -325,89 +361,112 @@ function handleDestruction(victim, killer) {
   victim.armor = 25;
   victim.shield = 0;
   victim.order = 'none';
+  syncPilotToCloud(victim);
 
   const victimSocket = io.sockets.sockets.get(victim.id);
   if (victimSocket) {
     victimSocket.leave('nullsec');
     victimSocket.join('station');
-    victimSocket.emit('ship_destroyed', "Nave destruida. Cápsula de escape transferida a la Estación.");
+    victimSocket.emit('ship_destroyed', "Tu nave fue destruida. Cápsula eyectada a la Estación.");
   }
 }
 
+// -------------------------------------------------------------
+// EVENTOS DE SOCKET
+// -------------------------------------------------------------
 io.on('connection', (socket) => {
-  socket.on('pilot_login', (pilotName) => {
+  // Login / Carga desde Atlas
+  socket.on('pilot_login', async (pilotName) => {
     const cleanName = pilotName.trim().substring(0, 14) || `Cmdr_${socket.id.substring(0, 4)}`;
 
-    if (!dbPilots[cleanName]) {
-      dbPilots[cleanName] = {
-        name: cleanName,
-        corp: "Sin Corp",
-        wallet: 300,
-        ore: 10,
-        armor: 100,
-        baseMaxArmor: 100,
-        maxArmor: 100,
-        shield: 100,
-        weaponBonus: 0,
-        skills: { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0 },
-        training: null,
-        activeMission: null
+    try {
+      let saved = await Pilot.findOne({ name: cleanName });
+      if (!saved) {
+        saved = await Pilot.create({
+          name: cleanName,
+          corp: "Sin Corp",
+          wallet: 300,
+          ore: 10,
+          armor: 100,
+          baseMaxArmor: 100,
+          maxArmor: 100,
+          shield: 100
+        });
+        console.log(`[ATLAS] Nuevo piloto registrado en la nube: ${cleanName}`);
+      } else {
+        console.log(`[ATLAS] Piloto existente cargado desde la nube: ${cleanName} (${saved.wallet} ISK)`);
+      }
+
+      // Si tenía entrenamiento en curso mientras estuvo desconectado, verificar si ya terminó
+      const now = Date.now();
+      if (saved.training && now >= saved.training.finishAt) {
+        const skKey = saved.training.skillKey;
+        saved.skills = saved.skills || {};
+        saved.skills[skKey] = (saved.skills[skKey] || 0) + 1;
+        saved.training = null;
+        saved.maxArmor = (saved.baseMaxArmor || 100) + (saved.skills.armor_upgrade * 15);
+        await saved.save();
+      }
+
+      const maxArmorCalc = (saved.baseMaxArmor || 100) + ((saved.skills?.armor_upgrade || 0) * 15);
+
+      universe.players[socket.id] = {
+        id: socket.id,
+        name: saved.name,
+        corp: saved.corp || "Sin Corp",
+        sector: 'station',
+        shield: saved.shield,
+        armor: saved.armor,
+        baseMaxArmor: saved.baseMaxArmor || 100,
+        maxArmor: maxArmorCalc,
+        cap: 100,
+        ore: saved.ore,
+        wallet: saved.wallet,
+        weaponBonus: saved.weaponBonus || 0,
+        skills: saved.skills || { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0 },
+        training: saved.training || null,
+        activeMission: saved.activeMission || null,
+        order: 'none'
       };
-      saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+
+      socket.join('station');
+      socket.emit('login_success', universe.players[socket.id]);
+      io.emit('chat_broadcast', { channel: 'galaxy', sender: 'RED', text: `${saved.name} [${saved.corp}] ha entrado al universo.` });
+    } catch (e) {
+      console.error("Error al cargar piloto en Atlas:", e.message);
     }
-
-    const saved = dbPilots[cleanName];
-    saved.skills = saved.skills || { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0 };
-    const maxArmorCalc = (saved.baseMaxArmor || 100) + (saved.skills.armor_upgrade * 15);
-
-    universe.players[socket.id] = {
-      id: socket.id,
-      name: saved.name,
-      corp: saved.corp || "Sin Corp",
-      sector: 'station',
-      shield: saved.shield,
-      armor: saved.armor,
-      baseMaxArmor: saved.baseMaxArmor || 100,
-      maxArmor: maxArmorCalc,
-      cap: 100,
-      ore: saved.ore,
-      wallet: saved.wallet,
-      weaponBonus: saved.weaponBonus || 0,
-      skills: saved.skills,
-      training: saved.training || null,
-      activeMission: saved.activeMission || null,
-      order: 'none'
-    };
-
-    socket.join('station');
-    socket.emit('login_success', universe.players[socket.id]);
-    io.emit('chat_broadcast', { channel: 'galaxy', sender: 'RED', text: `${saved.name} [${saved.corp}] ha entrado al universo.` });
   });
 
-  // Aceptar Misión PvE
+  socket.on('train_skill', (skillKey) => {
+    const p = universe.players[socket.id];
+    if (!p || !SKILL_DEFS[skillKey] || p.training) return;
+
+    const curLvl = p.skills[skillKey] || 0;
+    if (curLvl >= SKILL_DEFS[skillKey].maxLevel) return;
+
+    const nextLvl = curLvl + 1;
+    const trainSec = SKILL_DEFS[skillKey].baseTimeSec * nextLvl;
+
+    p.training = {
+      skillKey: skillKey,
+      skillName: SKILL_DEFS[skillKey].name,
+      targetLevel: nextLvl,
+      finishAt: Date.now() + (trainSec * 1000)
+    };
+    syncPilotToCloud(p);
+  });
+
   socket.on('accept_mission', (missionId) => {
     const p = universe.players[socket.id];
-    if (!p || p.sector !== 'station') return;
-
-    const mission = MISSIONS_CATALOG[missionId];
-    if (!mission) return;
-
+    if (!p || p.sector !== 'station' || !MISSIONS_CATALOG[missionId]) return;
     p.activeMission = missionId;
-    dbPilots[p.name].activeMission = missionId;
-    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
-
-    socket.emit('chat_broadcast', {
-      channel: 'local',
-      sender: 'AGENCIA',
-      text: `Contrato aceptado: [${mission.title}]. Señal hostil localizada en coordenadas externas. Usa la computadora de salto para interceptarlo.`
-    });
+    syncPilotToCloud(p);
+    socket.emit('chat_broadcast', { channel: 'local', sender: 'AGENCIA', text: `Contrato aceptado: [${MISSIONS_CATALOG[missionId].title}].` });
   });
 
-  // Salto a Sector de Misión PvE
   socket.on('warp_to_mission', () => {
     const p = universe.players[socket.id];
     if (!p || !p.activeMission) return;
-
     const mission = MISSIONS_CATALOG[p.activeMission];
     if (!mission) return;
 
@@ -427,36 +486,9 @@ io.on('connection', (socket) => {
       timer: 15,
       round: 1
     };
-
-    socket.emit('chat_broadcast', {
-      channel: 'local',
-      sender: 'RADAR',
-      text: `¡Contacto confirmado! El ${mission.targetName} ha fijado sus armas sobre ti.`
-    });
   });
 
-  socket.on('train_skill', (skillKey) => {
-    const p = universe.players[socket.id];
-    if (!p || !SKILL_DEFS[skillKey] || p.training) return;
-
-    const currentLvl = p.skills[skillKey] || 0;
-    if (currentLvl >= SKILL_DEFS[skillKey].maxLevel) return;
-
-    const nextLvl = currentLvl + 1;
-    const trainSeconds = SKILL_DEFS[skillKey].baseTimeSec * nextLvl;
-
-    p.training = {
-      skillKey: skillKey,
-      skillName: SKILL_DEFS[skillKey].name,
-      targetLevel: nextLvl,
-      finishAt: Date.now() + (trainSeconds * 1000)
-    };
-
-    dbPilots[p.name].training = p.training;
-    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
-  });
-
-  socket.on('start_industry_job', (bpKey) => {
+  socket.on('start_industry_job', async (bpKey) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'station') return;
     const bp = BLUEPRINTS[bpKey];
@@ -464,25 +496,27 @@ io.on('connection', (socket) => {
 
     p.wallet -= bp.fee;
     p.ore -= bp.oreCost;
+    syncPilotToCloud(p);
 
-    industryJobs.push({
-      id: Date.now(),
+    const newJob = await IndustryJob.create({
+      jobId: Date.now(),
       pilot: p.name,
       bpKey: bpKey,
       blueprintName: bp.name,
       completesAt: Date.now() + (bp.buildTimeSec * 1000),
       completed: false
     });
-    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+    cachedJobs.push(newJob);
   });
 
-  socket.on('claim_industry_job', (jobId) => {
+  socket.on('claim_industry_job', async (jobId) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'station') return;
-    const idx = industryJobs.findIndex(j => j.id === jobId && j.pilot === p.name && j.completed);
-    if (idx === -1) return;
 
-    const bp = BLUEPRINTS[industryJobs[idx].bpKey];
+    const job = await IndustryJob.findOne({ jobId: jobId, pilot: p.name, completed: true });
+    if (!job) return;
+
+    const bp = BLUEPRINTS[job.bpKey];
     if (bp.type === 'module') {
       p.weaponBonus = Math.max(p.weaponBonus, 20);
     } else if (bp.type === 'ship') {
@@ -490,11 +524,13 @@ io.on('connection', (socket) => {
       p.maxArmor = 150 + ((p.skills?.armor_upgrade || 0) * 15);
       p.armor = p.maxArmor;
     }
-    industryJobs.splice(idx, 1);
-    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+    syncPilotToCloud(p);
+
+    await IndustryJob.deleteOne({ jobId: jobId });
+    cachedJobs = cachedJobs.filter(j => j.jobId !== jobId);
   });
 
-  socket.on('create_sell_order', ({ amount, pricePerUnit }) => {
+  socket.on('create_sell_order', async ({ amount, pricePerUnit }) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'station') return;
     amount = parseInt(amount);
@@ -502,72 +538,61 @@ io.on('connection', (socket) => {
     if (isNaN(amount) || amount <= 0 || isNaN(pricePerUnit) || pricePerUnit <= 0 || p.ore < amount) return;
 
     p.ore -= amount;
-    marketOrders.push({
-      id: Date.now(),
+    syncPilotToCloud(p);
+
+    const order = await MarketOrder.create({
+      orderId: Date.now(),
       seller: p.name,
       corp: p.corp,
       amount: amount,
       pricePerUnit: pricePerUnit
     });
-    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+    cachedMarket.push(order);
   });
 
-  socket.on('buy_market_order', (orderId) => {
+  socket.on('buy_market_order', async (orderId) => {
     const buyer = universe.players[socket.id];
     if (!buyer || buyer.sector !== 'station') return;
-    const idx = marketOrders.findIndex(o => o.id === orderId);
-    if (idx === -1) return;
 
-    const order = marketOrders[idx];
+    const order = await MarketOrder.findOne({ orderId: orderId });
+    if (!order) return;
+
     const total = order.amount * order.pricePerUnit;
     if (buyer.wallet < total) return;
 
     buyer.wallet -= total;
     buyer.ore += order.amount;
+    syncPilotToCloud(buyer);
 
     let tax = universe.sectors.nullsec.sovereignty.ownerCorp !== "Ninguna" ? Math.round(total * 0.05) : 0;
     let net = total - tax;
 
-    if (dbPilots[order.seller]) dbPilots[order.seller].wallet += net;
+    // Pagar al vendedor en BD
+    await Pilot.updateOne({ name: order.seller }, { $inc: { wallet: net } });
     const sellerOnline = Object.values(universe.players).find(p => p.name === order.seller);
     if (sellerOnline) sellerOnline.wallet += net;
 
-    marketOrders.splice(idx, 1);
-    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+    await MarketOrder.deleteOne({ orderId: orderId });
+    cachedMarket = cachedMarket.filter(o => o.orderId !== orderId);
   });
 
-  socket.on('cancel_market_order', (orderId) => {
+  socket.on('cancel_market_order', async (orderId) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'station') return;
-    const idx = marketOrders.findIndex(o => o.id === orderId && o.seller === p.name);
-    if (idx !== -1) {
-      p.ore += marketOrders[idx].amount;
-      marketOrders.splice(idx, 1);
-      saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
-    }
-  });
-
-  socket.on('mine_cycle', () => {
-    const p = universe.players[socket.id];
-    if (p && p.sector === 'mining') {
-      const miningLvl = p.skills?.mining_efficiency || 0;
-      const extracted = 5 + (miningLvl * 2);
-      p.ore += extracted;
-      universe.sectors.mining.asteroidHp = Math.max(0, universe.sectors.mining.asteroidHp - 10);
-      if (universe.sectors.mining.asteroidHp <= 0) {
-        universe.sectors.mining.asteroidHp = 100;
-        io.to('mining').emit('chat_broadcast', { channel: 'local', sender: 'TELEMETRÍA', text: "Asteroide agotado." });
-      }
+    const order = await MarketOrder.findOne({ orderId: orderId, seller: p.name });
+    if (order) {
+      p.ore += order.amount;
+      syncPilotToCloud(p);
+      await MarketOrder.deleteOne({ orderId: orderId });
+      cachedMarket = cachedMarket.filter(o => o.orderId !== orderId);
     }
   });
 
   socket.on('set_corp', (corpTag) => {
     const p = universe.players[socket.id];
     if (!p) return;
-    const tag = corpTag.trim().toUpperCase().substring(0, 5) || "CORP";
-    p.corp = tag;
-    dbPilots[p.name].corp = tag;
-    saveDatabase({ pilots: dbPilots, market: marketOrders, industryJobs: industryJobs });
+    p.corp = corpTag.trim().toUpperCase().substring(0, 5) || "CORP";
+    syncPilotToCloud(p);
   });
 
   socket.on('capture_sov', () => {
@@ -580,6 +605,18 @@ io.on('connection', (socket) => {
         sov.ownerCorp = p.corp;
         sov.progress = 100;
         io.emit('chat_broadcast', { channel: 'galaxy', sender: 'SOBERANÍA', text: `¡[${p.corp}] conquistó Nullsec!` });
+      }
+    }
+  });
+
+  socket.on('mine_cycle', () => {
+    const p = universe.players[socket.id];
+    if (p && p.sector === 'mining') {
+      const miningLvl = p.skills?.mining_efficiency || 0;
+      p.ore += (5 + (miningLvl * 2));
+      universe.sectors.mining.asteroidHp = Math.max(0, universe.sectors.mining.asteroidHp - 10);
+      if (universe.sectors.mining.asteroidHp <= 0) {
+        universe.sectors.mining.asteroidHp = 100;
       }
     }
   });
@@ -625,6 +662,7 @@ io.on('connection', (socket) => {
       const w = universe.sectors.nullsec.wrecks[idx];
       p.ore += w.ore;
       p.wallet += w.credits;
+      syncPilotToCloud(p);
       universe.sectors.nullsec.wrecks.splice(idx, 1);
     }
   });
@@ -635,16 +673,23 @@ io.on('connection', (socket) => {
       p.wallet -= 50;
       p.armor = p.maxArmor;
       p.shield = 100;
+      syncPilotToCloud(p);
       socket.emit('chat_broadcast', { channel: 'local', sender: 'HANGAR', text: "Reparación completa." });
     }
   });
 
-  socket.on('disconnect', () => {
-    delete universe.players[socket.id];
+  // AL DESCONECTARSE: Guardar de inmediato el estado final en Atlas
+  socket.on('disconnect', async () => {
+    const p = universe.players[socket.id];
+    if (p) {
+      console.log(`[DESCONEXIÓN]: Guardando estado final de ${p.name} en Atlas...`);
+      await syncPilotToCloud(p);
+      delete universe.players[socket.id];
+    }
   });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Servidor MMO con Misiones PvE corriendo en puerto ${PORT}`);
+  console.log(`Servidor MMO con persistencia real en MongoDB Atlas corriendo en puerto ${PORT}`);
 });

@@ -41,7 +41,8 @@
 
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 14, 0.95); display: flex; justify-content: center; align-items: center; z-index: 100; }
     .login-box { background: #0d1117; border: 1px solid #1f6feb; padding: 24px; max-width: 360px; width: 90%; text-align: center; }
-    .login-input { background: #010409; border: 1px solid #30363d; color: #79c0ff; font-family: inherit; padding: 8px; width: 85%; margin: 12px 0; }
+    .login-input { background: #010409; border: 1px solid #30363d; color: #79c0ff; font-family: inherit; padding: 8px; width: 85%; margin: 6px 0; }
+    .login-error { color: #f85149; font-size: 0.8em; margin-top: 6px; display: none; }
 
     .chat-section { margin-top: 10px; background: #010409; border: 1px solid #21262d; padding: 8px; }
     .chat-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
@@ -58,10 +59,13 @@
 
 <div id="login-overlay">
   <div class="login-box">
-    <h3 style="color: #58a6ff; margin-top: 0;">TERMINAL PILOTO // EVE TEXT</h3>
+    <h3 style="color: #58a6ff; margin-top: 0;">TERMINAL PILOTO // AUTENTICACIÓN</h3>
+    <p style="font-size:0.75em; color:#8b949e; margin-bottom:8px;">Si el piloto no existe, se registrará con la clave indicada.</p>
     <input type="text" id="login-name" class="login-input" placeholder="Nombre de piloto..." maxlength="14" autofocus>
+    <input type="password" id="login-pass" class="login-input" placeholder="Contraseña de acceso..." maxlength="20">
+    <div id="login-err-msg" class="login-error"></div>
     <br>
-    <button class="btn btn-act" style="width: 90%; padding: 8px;" onclick="doLogin()">Entrar al Universo</button>
+    <button class="btn btn-act" style="width: 90%; padding: 8px; margin-top:8px;" onclick="doLogin()">Autenticar y Entrar</button>
   </div>
 </div>
 
@@ -103,11 +107,11 @@
     </div>
   </div>
 
-  <!-- Zona de Acciones Básicas del Sector -->
+  <!-- Acciones Básicas del Sector -->
   <div class="box" id="sector-actions"></div>
   <div id="wrecks-container" style="display: none; margin-top: 6px;"></div>
 
-  <!-- PESTAÑAS DE SERVICIOS EN ESTACIONES (Jita / Outpost 73) -->
+  <!-- PESTAÑAS DE SERVICIOS EN ESTACIONES -->
   <div id="station-interface" style="display: none;">
     <div class="station-nav">
       <button class="nav-tab active" onclick="switchStationTab('trade')">Comercio Local</button>
@@ -251,9 +255,24 @@
   ];
 
   function doLogin() {
-    const val = document.getElementById('login-name').value;
-    if (val.trim()) socket.emit('pilot_login', val);
+    const name = document.getElementById('login-name').value;
+    const pass = document.getElementById('login-pass').value;
+    const errMsg = document.getElementById('login-err-msg');
+    errMsg.style.display = 'none';
+
+    if (!name.trim() || !pass.trim()) {
+      errMsg.innerText = "Ingresa nombre y contraseña.";
+      errMsg.style.display = 'block';
+      return;
+    }
+    socket.emit('pilot_login', { name, password: pass });
   }
+
+  socket.on('login_error', (msg) => {
+    const errMsg = document.getElementById('login-err-msg');
+    errMsg.innerText = msg;
+    errMsg.style.display = 'block';
+  });
 
   socket.on('login_success', (p) => {
     myPilot = p;
@@ -341,7 +360,7 @@
     document.getElementById('my-cargo-total').innerText = totalCargo;
     document.getElementById('my-cargo-max').innerText = me.cargoMax || 30;
 
-    // Alerta de Warp Spool-up
+    // Alerta de alineación
     const warpZone = document.getElementById('warp-zone');
     if (me.spoolingWarp) {
       warpZone.style.display = 'block';
@@ -364,11 +383,11 @@
     document.getElementById('bar-cap').style.width = me.cap + '%';
     document.getElementById('bar-cargo').style.width = Math.min(100, Math.round((totalCargo / (me.cargoMax || 30)) * 100)) + '%';
 
-    // Salto a misión
+    // Botón de salto de misión
     const btnMission = document.getElementById('btn-warp-mission');
     btnMission.style.display = (me.activeMission && (me.sector === 'station' || me.sector === 'outpost')) ? 'block' : 'none';
 
-    // Rutas
+    // Rutas de salto
     const jumpRoutes = {
       'station': [{ to: 'mining', name: 'Cinturón Veldspar-4' }, { to: 'nullsec', name: 'Sector Abisal Nullsec' }],
       'mining': [{ to: 'station', name: 'Estación Central Jita' }],
@@ -446,7 +465,7 @@
         </div>
         <div style="background:#261704; border:1px solid #d29922; padding:6px; margin-bottom:6px;">
           <b style="color:#f0883e;">VETA DE BISTRIMITA VOLÁTIL (120 ISK/m³):</b>
-          <button class="btn btn-volatile" onclick="socket.emit('mine_volatile_cycle')">⚡ Cosechar Bistrimita (Riesgo de Sobrecarga y Firma Visible)</button>
+          <button class="btn btn-volatile" onclick="socket.emit('mine_volatile_cycle')">⚡ Cosechar Bistrimita (Sobrecarga y Firma Visible)</button>
         </div>
         <b style="color:#ff7b72;">¡ZONA DE RIESGO! (Reloj: ${currentSec.timer}s - Ronda ${currentSec.round})</b><br>
         <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Salva (-25 Gj)</button>

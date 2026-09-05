@@ -7,7 +7,7 @@
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
     body { background-color: #070a0e; color: #79c0ff; font-family: 'Courier New', Courier, monospace; padding: 12px; margin: 0; }
-    .panel { border: 1px solid #1f6feb; padding: 14px; max-width: 820px; margin: 0 auto; background: #0d1117; box-shadow: 0 0 12px rgba(31, 111, 235, 0.25); }
+    .panel { border: 1px solid #1f6feb; padding: 14px; max-width: 840px; margin: 0 auto; background: #0d1117; box-shadow: 0 0 12px rgba(31, 111, 235, 0.25); }
     .header-bar { display: flex; justify-content: space-between; border-bottom: 1px dashed #30363d; padding-bottom: 8px; margin-bottom: 12px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
     @media (max-width: 650px) { .grid { grid-template-columns: 1fr; } }
@@ -17,6 +17,7 @@
     .shield-fill { background: #388bfd; }
     .armor-fill { background: #d29922; }
     .cap-fill { background: #e3b341; }
+    .npc-fill { background: #ff7b72; }
     .btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 10px; cursor: pointer; font-family: inherit; font-size: 0.85em; margin: 2px; }
     .btn:hover { background: #30363d; border-color: #8b949e; }
     .btn-warp { border-color: #a371f7; color: #d2a8ff; font-weight: bold; width: 100%; text-align: left; margin: 3px 0; }
@@ -27,6 +28,7 @@
     .btn-buy { border-color: #388bfd; color: #79c0ff; font-weight: bold; }
     .btn-ind { border-color: #e3b341; color: #f0883e; font-weight: bold; }
     .btn-skill { border-color: #58a6ff; color: #58a6ff; font-weight: bold; }
+    .btn-mission { border-color: #f85149; color: #ff7b72; font-weight: bold; }
 
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 14, 0.95); display: flex; justify-content: center; align-items: center; z-index: 100; }
     .login-box { background: #0d1117; border: 1px solid #1f6feb; padding: 24px; max-width: 360px; width: 90%; text-align: center; }
@@ -44,8 +46,6 @@
     .market-table { width: 100%; border-collapse: collapse; font-size: 0.8em; margin-top: 6px; }
     .market-table th, .market-table td { border: 1px solid #21262d; padding: 4px 6px; text-align: left; }
     .market-table th { background: #161b22; color: #58a6ff; }
-
-    .skill-card { background: #010409; border: 1px solid #21262d; padding: 6px 8px; margin-top: 4px; font-size: 0.8em; display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
@@ -69,7 +69,7 @@
   </div>
 
   <div class="grid">
-    <!-- Nave -->
+    <!-- Tu Nave -->
     <div class="box">
       <div style="color: #58a6ff; font-weight: bold;" id="my-name">[PILOTO ACTIVO]</div>
       <div style="font-size: 0.8em; color: #d2a8ff;">Corp: <b id="my-corp">Sin Corp</b></div>
@@ -88,49 +88,66 @@
       <button class="btn btn-warp" onclick="warpTo('station')">⏵ Saltar a Estación Central Jita</button>
       <button class="btn btn-warp" onclick="warpTo('mining')">⏵ Saltar a Cinturón Veldspar-4</button>
       <button class="btn btn-warp" onclick="warpTo('nullsec')">⏵ Saltar a Nullsec (Guerra / Soberanía)</button>
+      <button class="btn btn-mission" id="btn-warp-mission" style="display:none; width:100%; margin-top:4px;" onclick="socket.emit('warp_to_mission')">⚡ INTERCEPTAR SEÑAL HOSTIL (MISIÓN)</button>
     </div>
   </div>
 
-  <!-- Zona de Acciones por Sector -->
+  <!-- Zona Interactiva de Sector -->
   <div class="box" id="sector-actions"></div>
   <div id="wrecks-container" style="display: none; margin-top: 8px;"></div>
 
-  <!-- NEURO-ENTRENAMIENTO DE HABILIDADES (En Hangar) -->
-  <div class="box" id="skills-section" style="display: none; margin-top: 10px;">
-    <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px; display: flex; justify-content: space-between;">
-      <span>INTERFAZ NEURAL // ÁRBOL DE HABILIDADES PASIVAS</span>
-      <span id="training-status-txt" style="color: #f0883e; font-size: 0.85em;">Sin entrenamiento activo</span>
+  <!-- TABLÓN DE MISIONES Y CONTRATOS (En Hangar) -->
+  <div class="box" id="missions-section" style="display: none; margin-top: 10px;">
+    <div style="color: #ff7b72; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px;">
+      OFICINA DE SEGURIDAD // CONTRATOS DE CAZARRECOMPENSAS
     </div>
-
-    <div id="skills-list" style="margin-top: 8px;">
-      <!-- Llenado dinámicamente -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; font-size: 0.8em;">
+      <div style="background:#010409; border:1px solid #30363d; padding:8px;">
+        <b>Caza: Corsaria 'Bloodhound'</b><br>
+        Blanco: Fragata Ligera (80 HP)<br>
+        Recompensa: <b style="color:#7ee787;">+150 ISK</b> + 10 m³ menas<br>
+        <button class="btn btn-mission" style="margin-top:4px;" onclick="acceptMission('pirate_scout')">Aceptar Contrato</button>
+      </div>
+      <div style="background:#010409; border:1px solid #30363d; padding:8px;">
+        <b>Caza Mayor: 'Vindicator'</b><br>
+        Blanco: Crucero Pirata (160 HP)<br>
+        Recompensa: <b style="color:#7ee787;">+450 ISK</b> + 30 m³ menas<br>
+        <button class="btn btn-mission" style="margin-top:4px;" onclick="acceptMission('pirate_commander')">Aceptar Contrato</button>
+      </div>
     </div>
   </div>
 
-  <!-- CENTRO DE INDUSTRIA (En Hangar) -->
+  <!-- HABILIDADES (En Hangar) -->
+  <div class="box" id="skills-section" style="display: none; margin-top: 10px;">
+    <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px; display: flex; justify-content: space-between;">
+      <span>INTERFAZ NEURAL // ÁRBOL DE HABILIDADES</span>
+      <span id="training-status-txt" style="color: #f0883e; font-size: 0.85em;">Sin entrenamiento</span>
+    </div>
+    <div id="skills-list" style="margin-top: 8px;"></div>
+  </div>
+
+  <!-- INDUSTRIA (En Hangar) -->
   <div class="box" id="industry-section" style="display: none; margin-top: 10px;">
     <div style="color: #f0883e; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px;">
-      CENTRO DE MANUFACTURA E INDUSTRIA AEROESPACIAL
+      CENTRO DE MANUFACTURA INDUSTRIAL
     </div>
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; font-size: 0.8em;">
       <div style="background: #010409; padding: 8px; border: 1px solid #30363d;">
-        <b>Plano: Láser de Pulso T2</b> (+20 daño)<br>
-        25 m³ menas + 100 ISK | 30s<br>
+        <b>Láser T2</b> (+20 daño)<br>25 m³ + 100 ISK | 30s<br>
         <button class="btn btn-ind" style="margin-top: 4px;" onclick="startJob('laser_t2')">Fabricar</button>
       </div>
       <div style="background: #010409; padding: 8px; border: 1px solid #30363d;">
-        <b>Plano: Crucero 'Cerberus'</b> (150 HP)<br>
-        60 m³ menas + 300 ISK | 60s<br>
+        <b>Crucero 'Cerberus'</b> (150 HP)<br>60 m³ + 300 ISK | 60s<br>
         <button class="btn btn-ind" style="margin-top: 4px;" onclick="startJob('heavy_cruiser')">Construir</button>
       </div>
     </div>
     <div style="margin-top: 8px; font-size: 0.82em;">
-      <b>LÍNEAS DE PRODUCCIÓN:</b>
-      <div id="industry-jobs-list" style="margin-top: 4px;">Ningún trabajo activo.</div>
+      <b>PRODUCCIÓN ACTIVA:</b>
+      <div id="industry-jobs-list" style="margin-top: 4px;">Ninguna.</div>
     </div>
   </div>
 
-  <!-- BOLSA DE COMERCIO (En Hangar) -->
+  <!-- MERCADO (En Hangar) -->
   <div class="box" id="market-section" style="display: none; margin-top: 10px;">
     <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px; display: flex; justify-content: space-between;">
       <span>BOLSA DE COMERCIO REGIONAL JITA</span>
@@ -168,9 +185,9 @@
   let activeChannel = 'galaxy';
 
   const SKILL_CATALOG = [
-    { key: 'gunnery', name: 'Balística Espacial', desc: '+10% daño en combate por nivel' },
-    { key: 'armor_upgrade', name: 'Gestión de Blindaje', desc: '+15 HP de casco por nivel' },
-    { key: 'mining_efficiency', name: 'Extracción Minera', desc: '+2 m³ menas por ciclo por nivel' }
+    { key: 'gunnery', name: 'Balística Espacial', desc: '+10% daño por nivel' },
+    { key: 'armor_upgrade', name: 'Gestión de Blindaje', desc: '+15 HP casco por nivel' },
+    { key: 'mining_efficiency', name: 'Extracción Minera', desc: '+2 m³ menas por nivel' }
   ];
 
   function doLogin() {
@@ -210,6 +227,7 @@
   function startJob(bpKey) { socket.emit('start_industry_job', bpKey); }
   function claimJob(jobId) { socket.emit('claim_industry_job', jobId); }
   function trainSkill(key) { socket.emit('train_skill', key); }
+  function acceptMission(id) { socket.emit('accept_mission', id); }
 
   function setCorporation() {
     const tag = prompt("Tag de Corporación (máx 5 letras, ej: VOID):");
@@ -246,7 +264,7 @@
     const me = data.players[socket.id];
     if (!me) return;
 
-    const secInfo = data.sectors[me.sector];
+    const secInfo = data.sectors[me.sector] || { name: "Cuadrante de Intercepción PvE" };
 
     document.getElementById('sector-title').innerText = secInfo.name;
     document.getElementById('my-name').innerText = `[TU NAVE] ${me.name}`;
@@ -263,85 +281,62 @@
     document.getElementById('bar-armor').style.width = armorPct + '%';
     document.getElementById('bar-cap').style.width = me.cap + '%';
 
+    // Botón de salto de misión
+    const btnMission = document.getElementById('btn-warp-mission');
+    if (me.activeMission && me.sector === 'station') {
+      btnMission.style.display = 'block';
+    } else {
+      btnMission.style.display = 'none';
+    }
+
     const actionsBox = document.getElementById('sector-actions');
     const wrecksBox = document.getElementById('wrecks-container');
     const marketBox = document.getElementById('market-section');
     const indBox = document.getElementById('industry-section');
     const skillsBox = document.getElementById('skills-section');
+    const missionsBox = document.getElementById('missions-section');
 
     if (me.sector === 'station') {
       wrecksBox.style.display = 'none';
       marketBox.style.display = 'block';
       indBox.style.display = 'block';
       skillsBox.style.display = 'block';
+      missionsBox.style.display = 'block';
 
-      // Renderizar Árbol de Habilidades
+      // Habilidades
       const now = Date.now();
       const statusTxt = document.getElementById('training-status-txt');
       if (me.training) {
         const remSec = Math.max(0, Math.round((me.training.finishAt - now) / 1000));
-        statusTxt.innerHTML = `<b style="color:#58a6ff;">⚙ Entrenando ${me.training.skillName} ${me.training.targetLevel} (${remSec}s)</b>`;
+        statusTxt.innerHTML = `<b style="color:#58a6ff;">⚙ ${me.training.skillName} ${me.training.targetLevel} (${remSec}s)</b>`;
       } else {
-        statusTxt.innerText = "Cola neural inactiva";
+        statusTxt.innerText = "Cola neural libre";
       }
 
-      const skillsContainer = document.getElementById('skills-list');
-      skillsContainer.innerHTML = SKILL_CATALOG.map(sk => {
-        const currentLvl = me.skills ? (me.skills[sk.key] || 0) : 0;
-        const isMax = currentLvl >= 5;
-        const isTrainingThis = me.training && me.training.skillKey === sk.key;
-        
-        let actionBtn = "";
-        if (isMax) {
-          actionBtn = `<span style="color:#7ee787; font-weight:bold;">MAESTRÍA (V)</span>`;
-        } else if (isTrainingThis) {
-          actionBtn = `<span style="color:#f0883e;">EN COLA...</span>`;
-        } else {
-          actionBtn = `<button class="btn btn-skill" onclick="trainSkill('${sk.key}')" ${me.training ? 'disabled' : ''}>Entrenar Nivel ${currentLvl + 1}</button>`;
-        }
-
-        return `
-          <div class="skill-card">
-            <div>
-              <b>${sk.name}</b> [Nivel ${currentLvl}/5]<br>
-              <span style="color:#8b949e; font-size:0.9em;">${sk.desc}</span>
-            </div>
-            <div>${actionBtn}</div>
-          </div>
-        `;
+      document.getElementById('skills-list').innerHTML = SKILL_CATALOG.map(sk => {
+        const cur = me.skills ? (me.skills[sk.key] || 0) : 0;
+        let btn = cur >= 5 ? `<span style="color:#7ee787;">MAESTRÍA (V)</span>` :
+          (me.training?.skillKey === sk.key ? `<span style="color:#f0883e;">EN COLA...</span>` :
+          `<button class="btn btn-skill" onclick="trainSkill('${sk.key}')" ${me.training ? 'disabled':''}>Entrenar Nivel ${cur+1}</button>`);
+        return `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #21262d; padding:4px 0;"><span><b>${sk.name}</b> [Nvl ${cur}/5] - <small style="color:#8b949e;">${sk.desc}</small></span><div>${btn}</div></div>`;
       }).join('');
 
-      // Renderizar Industria
-      const jobsList = document.getElementById('industry-jobs-list');
-      const myJobs = (data.industryJobs || []).filter(j => j.pilot === me.name);
-      if (myJobs.length > 0) {
-        jobsList.innerHTML = myJobs.map(j => {
-          const remSec = Math.max(0, Math.round((j.completesAt - now) / 1000));
-          if (remSec === 0 || j.completed) {
-            return `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #30363d; padding:2px 0;"><span>✔ <b>${j.blueprintName}</b></span><button class="btn btn-act" onclick="claimJob(${j.id})">Entregar</button></div>`;
-          } else {
-            return `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #30363d; padding:2px 0;"><span>⚙ ${j.blueprintName}</span><span style="color:#f0883e;">${remSec}s</span></div>`;
-          }
-        }).join('');
-      } else {
-        jobsList.innerHTML = `<span style="color:#8b949e;">No hay líneas activas.</span>`;
-      }
+      // Industria
+      document.getElementById('industry-jobs-list').innerHTML = (data.industryJobs || []).filter(j => j.pilot === me.name).map(j => {
+        const rem = Math.max(0, Math.round((j.completesAt - now) / 1000));
+        return rem === 0 || j.completed ? `<div>✔ <b>${j.blueprintName}</b> <button class="btn btn-act" onclick="claimJob(${j.id})">Entregar</button></div>` : `<div>⚙ ${j.blueprintName} (${rem}s)</div>`;
+      }).join('') || `<span style="color:#8b949e;">Ninguna.</span>`;
 
-      // Renderizar Mercado
-      const tbody = document.getElementById('market-tbody');
-      if (data.market && data.market.length > 0) {
-        tbody.innerHTML = data.market.map(o => {
-          const isMine = o.seller === me.name;
-          const total = o.amount * o.pricePerUnit;
-          const btn = isMine ? `<button class="btn btn-sos" onclick="cancelOrder(${o.id})">Cancelar</button>` : `<button class="btn btn-buy" onclick="buyOrder(${o.id})">Comprar</button>`;
-          return `<tr><td>[${o.corp}] ${o.seller}</td><td>${o.amount} m³</td><td>${o.pricePerUnit} ISK</td><td>${total} ISK</td><td>${btn}</td></tr>`;
-        }).join('');
-      } else {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:#8b949e;">No hay ofertas activas.</td></tr>`;
-      }
+      // Mercado
+      document.getElementById('market-tbody').innerHTML = (data.market || []).map(o => {
+        const isMine = o.seller === me.name;
+        const total = o.amount * o.pricePerUnit;
+        const btn = isMine ? `<button class="btn btn-sos" onclick="cancelOrder(${o.id})">Cancelar</button>` : `<button class="btn btn-buy" onclick="buyOrder(${o.id})">Comprar</button>`;
+        return `<tr><td>[${o.corp}] ${o.seller}</td><td>${o.amount} m³</td><td>${o.pricePerUnit} ISK</td><td>${total} ISK</td><td>${btn}</td></tr>`;
+      }).join('') || `<tr><td colspan="5" style="color:#8b949e;">Sin ofertas.</td></tr>`;
 
       actionsBox.innerHTML = `
-        <b style="color:#58a6ff;">SERVICIOS DEL HANGAR:</b><br>
+        <b style="color:#58a6ff;">SERVICIOS DE LA ESTACIÓN:</b><br>
         <button class="btn" onclick="setCorporation()">Gestionar Corporación</button>
         <button class="btn" onclick="socket.emit('repair')">Reparar Casco (50 ISK)</button>
       `;
@@ -350,15 +345,17 @@
       marketBox.style.display = 'none';
       indBox.style.display = 'none';
       skillsBox.style.display = 'none';
+      missionsBox.style.display = 'none';
       const eff = me.skills?.mining_efficiency || 0;
       actionsBox.innerHTML = `
-        <b style="color:#56d364;">CINTURÓN VELDSPAR-4:</b> (Roca: ${secInfo.asteroidHp}%)<br>
-        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser (+${5 + (eff*2)} menas con Lvl ${eff})</button>
+        <b style="color:#56d364;">CINTURÓN VELDSPAR-4:</b><br>
+        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser (+${5 + (eff*2)} menas)</button>
       `;
     } else if (me.sector === 'nullsec') {
       marketBox.style.display = 'none';
       indBox.style.display = 'none';
       skillsBox.style.display = 'none';
+      missionsBox.style.display = 'none';
       const sov = secInfo.sovereignty;
       actionsBox.innerHTML = `
         <div style="border-bottom: 1px dashed #30363d; padding-bottom: 6px; margin-bottom: 6px;">
@@ -366,9 +363,9 @@
           <button class="btn btn-sov" style="margin-left: 8px;" onclick="socket.emit('capture_sov')">Reclamar Baliza</button>
         </div>
         <b style="color:#ff7b72;">SECTOR NULLSEC // RELOJ: ${secInfo.timer}s (Ronda ${secInfo.round})</b><br>
-        <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Baterías (-25 Gj)</button>
+        <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Salva (-25 Gj)</button>
         <button class="btn" onclick="socket.emit('set_order', 'defense')">Reforzar Escudo (-20 Gj)</button>
-        <button class="btn btn-sos" onclick="emitSOS()">Emitir S.O.S. Galáctico</button>
+        <button class="btn btn-sos" onclick="emitSOS()">Emitir S.O.S.</button>
         <span style="font-size:0.8em; margin-left:8px; color:#f0883e;">Orden: ${me.order.toUpperCase()}</span>
       `;
 
@@ -384,12 +381,38 @@
       } else {
         wrecksBox.style.display = 'none';
       }
+    } else if (me.sector === 'pve') {
+      // PANTALLA DE COMBATE CONTRA NPC
+      wrecksBox.style.display = 'none';
+      marketBox.style.display = 'none';
+      indBox.style.display = 'none';
+      skillsBox.style.display = 'none';
+      missionsBox.style.display = 'none';
+
+      const enc = data.pveEncounters ? data.pveEncounters[me.name] : null;
+      if (enc) {
+        const npcPct = Math.round((enc.npcArmor / enc.npcMaxArmor) * 100);
+        actionsBox.innerHTML = `
+          <div style="background:#1c0d0d; border:1px solid #da3633; padding:8px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; color:#ff7b72; font-weight:bold;">
+              <span>[OBJETIVO HOSTIL] ${enc.targetName}</span>
+              <span>BLINDAJE: ${enc.npcArmor} / ${enc.npcMaxArmor} HP</span>
+            </div>
+            <div class="bar-track"><div class="bar-fill npc-fill" style="width:${npcPct}%;"></div></div>
+          </div>
+          <b style="color:#f0883e;">TURNO PVE // RESOLUCIÓN EN: ${enc.timer}s (Ronda ${enc.round})</b><br>
+          <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Baterías (-25 Gj)</button>
+          <button class="btn" onclick="socket.emit('set_order', 'defense')">Reforzar Escudo (-20 Gj)</button>
+          <button class="btn btn-warp" style="width:auto; margin-left:8px;" onclick="warpTo('station')">Huir a Estación</button>
+          <span style="font-size:0.8em; margin-left:8px; color:#f0883e;">Orden: ${me.order.toUpperCase()}</span>
+        `;
+      }
     }
   });
 
   socket.on('ship_destroyed', (msg) => alert(msg));
   socket.on('combat_log', (logs) => {
-    appendChat(`<span style="color:#f0883e;"><b>[RESOLUCIÓN COMBATE NULLSEC]:</b></span>`);
+    appendChat(`<span style="color:#f0883e;"><b>[INFORME TÁCTICO]:</b></span>`);
     logs.forEach(l => appendChat(`> ${l}`));
   });
 </script>

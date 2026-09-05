@@ -2,13 +2,15 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Sector 04 - Soberanía y Corporaciones</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sector 04 - Bolsa de Comercio Galáctica</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
-    body { background-color: #070a0e; color: #79c0ff; font-family: 'Courier New', Courier, monospace; padding: 16px; margin: 0; }
-    .panel { border: 1px solid #1f6feb; padding: 16px; max-width: 760px; margin: 0 auto; background: #0d1117; box-shadow: 0 0 12px rgba(31, 111, 235, 0.25); }
+    body { background-color: #070a0e; color: #79c0ff; font-family: 'Courier New', Courier, monospace; padding: 12px; margin: 0; }
+    .panel { border: 1px solid #1f6feb; padding: 14px; max-width: 780px; margin: 0 auto; background: #0d1117; box-shadow: 0 0 12px rgba(31, 111, 235, 0.25); }
     .header-bar { display: flex; justify-content: space-between; border-bottom: 1px dashed #30363d; padding-bottom: 8px; margin-bottom: 12px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
     .box { background: #090d12; border: 1px solid #21262d; padding: 10px; }
     .bar-track { width: 100%; height: 8px; background: #161b22; border: 1px solid #30363d; margin: 2px 0 6px 0; }
     .bar-fill { height: 100%; transition: width 0.3s; }
@@ -17,24 +19,30 @@
     .cap-fill { background: #e3b341; }
     .btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 10px; cursor: pointer; font-family: inherit; font-size: 0.85em; margin: 2px; }
     .btn:hover { background: #30363d; border-color: #8b949e; }
-    .btn-warp { border-color: #a371f7; color: #d2a8ff; font-weight: bold; }
+    .btn-warp { border-color: #a371f7; color: #d2a8ff; font-weight: bold; width: 100%; text-align: left; margin: 3px 0; }
     .btn-act { border-color: #238636; color: #3fb950; font-weight: bold; }
     .btn-sos { border-color: #da3633; color: #f85149; font-weight: bold; }
     .btn-loot { border-color: #e3b341; color: #e3b341; font-weight: bold; }
     .btn-sov { border-color: #f0883e; color: #f0883e; font-weight: bold; }
+    .btn-buy { border-color: #388bfd; color: #79c0ff; font-weight: bold; }
 
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 14, 0.95); display: flex; justify-content: center; align-items: center; z-index: 100; }
-    .login-box { background: #0d1117; border: 1px solid #1f6feb; padding: 24px; max-width: 380px; width: 100%; text-align: center; }
+    .login-box { background: #0d1117; border: 1px solid #1f6feb; padding: 24px; max-width: 360px; width: 90%; text-align: center; }
     .login-input { background: #010409; border: 1px solid #30363d; color: #79c0ff; font-family: inherit; padding: 8px; width: 85%; margin: 12px 0; }
 
     .chat-section { margin-top: 12px; background: #010409; border: 1px solid #21262d; padding: 8px; }
     .chat-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
     .chat-tab { background: #161b22; border: 1px solid #30363d; color: #8b949e; padding: 4px 8px; font-size: 0.75em; cursor: pointer; }
     .chat-tab.active { background: #1f6feb; color: #fff; border-color: #58a6ff; }
-    #chat-box { height: 120px; overflow-y: auto; font-size: 0.8em; line-height: 1.4; color: #c9d1d9; }
+    #chat-box { height: 110px; overflow-y: auto; font-size: 0.8em; line-height: 1.4; color: #c9d1d9; }
     .chat-form { display: flex; gap: 4px; margin-top: 6px; }
     .chat-input { flex-grow: 1; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px; font-family: inherit; font-size: 0.8em; }
     .sos-banner { background: #3b0d0c; border: 1px solid #da3633; padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; }
+
+    /* Estilos del Tablón de Mercado */
+    .market-table { width: 100%; border-collapse: collapse; font-size: 0.8em; margin-top: 6px; }
+    .market-table th, .market-table td { border: 1px solid #21262d; padding: 4px 6px; text-align: left; }
+    .market-table th { background: #161b22; color: #58a6ff; }
   </style>
 </head>
 <body>
@@ -68,20 +76,53 @@
       <div class="bar-track"><div id="bar-armor" class="bar-fill armor-fill"></div></div>
       <div style="font-size: 0.75em;">CAPACITOR: <span id="my-cap">100</span> Gj</div>
       <div class="bar-track"><div id="bar-cap" class="bar-fill cap-fill"></div></div>
-      <div style="font-size: 0.8em; margin-top: 6px;">Bodega: <b id="my-ore" style="color: #56d364;">0</b> m³ mineral</div>
+      <div style="font-size: 0.8em; margin-top: 6px;">Bodega de Carga: <b id="my-ore" style="color: #56d364;">0</b> m³ mineral</div>
     </div>
 
     <!-- Navegación -->
     <div class="box">
       <div style="color: #d2a8ff; font-weight: bold; margin-bottom: 6px;">COMPUTADORA DE SALTO:</div>
-      <button class="btn btn-warp" onclick="warpTo('station')">Saltar a Estación Central</button><br>
-      <button class="btn btn-warp" onclick="warpTo('mining')">Saltar a Cinturón Minero</button><br>
-      <button class="btn btn-warp" onclick="warpTo('nullsec')">Saltar a Nullsec (PvP / Soberanía)</button>
+      <button class="btn btn-warp" onclick="warpTo('station')">⏵ Saltar a Estación Central Jita</button>
+      <button class="btn btn-warp" onclick="warpTo('mining')">⏵ Saltar a Cinturón Minero Veldspar-4</button>
+      <button class="btn btn-warp" onclick="warpTo('nullsec')">⏵ Saltar a Nullsec (Guerra / Soberanía)</button>
     </div>
   </div>
 
+  <!-- Zona de Acciones por Sector -->
   <div class="box" id="sector-actions"></div>
   <div id="wrecks-container" style="display: none; margin-top: 8px;"></div>
+
+  <!-- Tablón de Mercado Abierto (Solo visible en la Estación) -->
+  <div class="box" id="market-section" style="display: none; margin-top: 10px;">
+    <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px; display: flex; justify-content: space-between;">
+      <span>BOLSA DE COMERCIO REGIONAL JITA</span>
+      <span id="market-tax-info" style="font-size: 0.85em; color: #f0883e;">Impuesto: 0%</span>
+    </div>
+
+    <!-- Formulario para crear orden -->
+    <div style="margin-top: 8px; font-size: 0.82em; background: #010409; padding: 6px; border: 1px dashed #30363d;">
+      <b>CREAR ORDEN DE VENTA:</b> Vender 
+      <input type="number" id="sell-amount" style="width: 50px; background:#0d1117; border:1px solid #30363d; color:#79c0ff;" placeholder="Cant"> m³ a 
+      <input type="number" id="sell-price" style="width: 50px; background:#0d1117; border:1px solid #30363d; color:#79c0ff;" placeholder="ISK/u"> ISK c/u 
+      <button class="btn btn-act" onclick="createOrder()">Publicar Oferta</button>
+    </div>
+
+    <!-- Lista de órdenes activas -->
+    <table class="market-table">
+      <thead>
+        <tr>
+          <th>Vendedor</th>
+          <th>Cantidad</th>
+          <th>Precio/u</th>
+          <th>Total</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody id="market-tbody">
+        <tr><td colspan="5">No hay órdenes en este momento.</td></tr>
+      </tbody>
+    </table>
+  </div>
 
   <!-- Chat en vivo -->
   <div class="chat-section">
@@ -142,6 +183,15 @@
     if (tag) socket.emit('set_corp', tag);
   }
 
+  function createOrder() {
+    const amount = document.getElementById('sell-amount').value;
+    const price = document.getElementById('sell-price').value;
+    socket.emit('create_sell_order', { amount, pricePerUnit: price });
+  }
+
+  function buyOrder(id) { socket.emit('buy_market_order', id); }
+  function cancelOrder(id) { socket.emit('cancel_market_order', id); }
+
   socket.on('chat_broadcast', (data) => {
     const color = data.channel === 'galaxy' ? '#79c0ff' : '#56d364';
     appendChat(`<span style="color:${color};">[${data.channel.toUpperCase()}] <b>${data.sender}:</b></span> ${data.text}`);
@@ -152,7 +202,7 @@
     banner.style.display = 'flex';
     banner.className = 'sos-banner';
     banner.innerHTML = `
-      <span><b style="color:#f85149;">¡ALERTA DE FLOTA S.O.S.!</b> ${data.pilot} bajo fuego en ${data.sectorName}.</span>
+      <span><b style="color:#f85149;">¡ALERTA S.O.S.!</b> ${data.pilot} bajo fuego en ${data.sectorName}.</span>
       <button class="btn btn-sos" onclick="warpTo('${data.sectorId}')">SALTAR A RESCATAR</button>
     `;
     setTimeout(() => { banner.style.display = 'none'; }, 15000);
@@ -180,29 +230,62 @@
 
     const actionsBox = document.getElementById('sector-actions');
     const wrecksBox = document.getElementById('wrecks-container');
+    const marketBox = document.getElementById('market-section');
 
     if (me.sector === 'station') {
       wrecksBox.style.display = 'none';
+      marketBox.style.display = 'block';
+
+      const sovOwner = data.sectors.nullsec.sovereignty.ownerCorp;
+      document.getElementById('market-tax-info').innerText = sovOwner === "Ninguna" 
+        ? "Sin impuestos de soberanía" 
+        : `Impuesto: 5% a [${sovOwner}]`;
+
+      // Renderizar tabla de mercado
+      const tbody = document.getElementById('market-tbody');
+      if (data.market && data.market.length > 0) {
+        tbody.innerHTML = data.market.map(o => {
+          const isMine = o.seller === me.name;
+          const total = o.amount * o.pricePerUnit;
+          const actionBtn = isMine 
+            ? `<button class="btn btn-sos" onclick="cancelOrder(${o.id})">Cancelar</button>`
+            : `<button class="btn btn-buy" onclick="buyOrder(${o.id})">Comprar Lote</button>`;
+
+          return `
+            <tr>
+              <td>[${o.corp}] ${o.seller}</td>
+              <td>${o.amount} m³</td>
+              <td>${o.pricePerUnit} ISK</td>
+              <td><b>${total}</b> ISK</td>
+              <td>${actionBtn}</td>
+            </tr>
+          `;
+        }).join('');
+      } else {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:#8b949e;">No hay ofertas disponibles. ¡Sé el primero en vender!</td></tr>`;
+      }
+
       actionsBox.innerHTML = `
-        <b style="color:#58a6ff;">OFICINAS DE CORPORACIÓN Y HANGAR:</b><br>
-        <button class="btn" onclick="setCorporation()">Fundar o Cambiar Corporación</button>
-        <button class="btn btn-act" onclick="socket.emit('sell_ore')">Vender Mineral (+20 ISK c/u)</button>
+        <b style="color:#58a6ff;">SERVICIOS DEL HANGAR:</b><br>
+        <button class="btn" onclick="setCorporation()">Gestionar Corporación</button>
         <button class="btn" onclick="socket.emit('repair')">Reparar Casco (50 ISK)</button>
       `;
     } else if (me.sector === 'mining') {
       wrecksBox.style.display = 'none';
+      marketBox.style.display = 'none';
       actionsBox.innerHTML = `
         <b style="color:#56d364;">CINTURÓN VELDSPAR-4:</b> (Roca: ${secInfo.asteroidHp}%)<br>
         <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser de Extracción (+5 menas)</button>
       `;
     } else if (me.sector === 'nullsec') {
+      marketBox.style.display = 'none';
       const sov = secInfo.sovereignty;
       actionsBox.innerHTML = `
         <div style="border-bottom: 1px dashed #30363d; padding-bottom: 6px; margin-bottom: 6px;">
-          SOBERANÍA DEL SISTEMA: <b style="color:#f0883e;">[${sov.ownerCorp}]</b> (${sov.progress}%)
-          <button class="btn btn-sov" style="margin-left: 8px;" onclick="socket.emit('capture_sov')">Capturar Baliza Soberana</button>
+          SOBERANÍA DEL SECTOR: <b style="color:#f0883e;">[${sov.ownerCorp}]</b> (${sov.progress}%)
+          <button class="btn btn-sov" style="margin-left: 8px;" onclick="socket.emit('capture_sov')">Reclamar Baliza</button>
         </div>
-        <b style="color:#ff7b72;">SISTEMA NULLSEC // RELOJ: ${secInfo.timer}s (Ronda ${secInfo.round})</b><br>
+        <b style="color:#ff7b72;">SECTOR NULLSEC // RELOJ: ${secInfo.timer}s (Ronda ${secInfo.round})</b><br>
         <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Baterías (-25 Gj)</button>
         <button class="btn" onclick="socket.emit('set_order', 'defense')">Reforzar Escudo (-20 Gj)</button>
         <button class="btn btn-sos" onclick="emitSOS()">Emitir S.O.S. Galáctico</button>
@@ -211,7 +294,7 @@
 
       if (secInfo.wrecks && secInfo.wrecks.length > 0) {
         wrecksBox.style.display = 'block';
-        wrecksBox.innerHTML = `<b style="color:#e3b341;">RESTOS DE NAVES FLOTANDO:</b>` +
+        wrecksBox.innerHTML = `<b style="color:#e3b341;">RESTOS EN EL SECTOR:</b>` +
           secInfo.wrecks.map(w => `
             <div style="background:#161b22; border:1px dashed #e3b341; padding:4px 8px; margin-top:4px; display:flex; justify-content:space-between; align-items:center;">
               <span>${w.name} (${w.ore} m³ menas, +${w.credits} ISK)</span>
@@ -226,7 +309,7 @@
 
   socket.on('ship_destroyed', (msg) => alert(msg));
   socket.on('combat_log', (logs) => {
-    appendChat(`<span style="color:#f0883e;"><b>[RESOLUCIÓN DE COMBATE NULLSEC]:</b></span>`);
+    appendChat(`<span style="color:#f0883e;"><b>[RESOLUCIÓN COMBATE NULLSEC]:</b></span>`);
     logs.forEach(l => appendChat(`> ${l}`));
   });
 </script>

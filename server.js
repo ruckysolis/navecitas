@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
 
-const { SHIP_TYPES, DRONE_TYPES, SKILL_DEFS, BLUEPRINTS, MISSIONS_CATALOG, MINERAL_PRICES } = require('./game/catalog');
+const { SHIP_TYPES, DRONE_TYPES, SKILL_DEFS, BLUEPRINTS, MISSIONS_CATALOG, MINERAL_PRICES, SECTORS_MAP } = require('./game/catalog');
 
 const app = express();
 const server = http.createServer(app);
@@ -88,6 +88,12 @@ const universe = {
     },
     'outpost': { name: "Outpost 73 (Frontera Outer Ring)", type: "station", npcBuyPrice: 55 }
   },
+  pveEncounters: {}
+};
+
+const universe = {
+  players: {},
+  sectors: SECTORS_MAP,
   pveEncounters: {}
 };
 

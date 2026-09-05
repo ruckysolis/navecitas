@@ -239,6 +239,16 @@ setInterval(async () => {
         if (sock) sock.emit('chat_broadcast', { channel: 'local', sender: 'INDUSTRIA', text: `¡[${job.blueprintName}] listo para entrega!` });
       }
     }
+
+    // 7. Regeneración continua del reactor (Capacitor) en toda la galaxia
+  for (let id in universe.players) {
+    const p = universe.players[id];
+    if (p.cap < 100) {
+      // Regenera 5 Gj por segundo (o más según la nave/habilidad)
+      p.cap = Math.min(100, p.cap + 5);
+    }
+  }
+    
   });
 
   // Guardado periódico

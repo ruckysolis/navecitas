@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
 
 const { SHIP_TYPES, DRONE_TYPES, SKILL_DEFS, BLUEPRINTS, MISSIONS_CATALOG, MINERAL_PRICES } = require('./game/catalog');
@@ -18,8 +19,10 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log(">>> [BD EN LA NUBE]: Conexión exitosa a MongoDB Atlas <<<"))
   .catch(err => console.error("Error al conectar a MongoDB:", err.message));
 
+// Esquema de Piloto con campo de contraseña encriptada
 const PilotSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
+  passwordHash: { type: String, required: true },
   corp: { type: String, default: "Sin Corp" },
   wallet: { type: Number, default: 300 },
   ore: { type: Number, default: 10 },
@@ -119,7 +122,7 @@ async function syncPilotToCloud(p) {
         training: p.training,
         activeMission: p.activeMission
       },
-      { upsert: true }
+      { upsert: false }
     );
   } catch (err) {
     console.error("Error persistiendo piloto:", err.message);
@@ -130,7 +133,7 @@ async function syncPilotToCloud(p) {
 setInterval(async () => {
   const now = Date.now();
 
-  // 1. Manejo de Saltos con Alineación (Warp Spool-up)
+  // 1. Alineación de Curvatura (Warp Spool-up)
   for (let id in universe.players) {
     const p = universe.players[id];
     if (p.spoolingWarp) {
@@ -146,7 +149,7 @@ setInterval(async () => {
           p.sector = dest;
           sock.join(dest);
           p.order = 'none';
-          sock.emit('chat_broadcast', { channel: 'local', sender: 'NAVEGACIÓN', text: `Salto completado. Entrando a ${universe.sectors[dest]?.name || dest}.` });
+          sock.emit('chat_broadcast', { channel: 'local', sender: 'NAVEGACIÓN', text: `Salto completado hacia ${universe.sectors[dest]?.name || dest}.` });
         }
       }
     }
@@ -346,10 +349,9 @@ function resolveCombat(combatants) {
     const target = combatants.find(p => p.id !== attacker.id && p.armor > 0 && (p.corp === "Sin Corp" || p.corp !== attacker.corp));
     if (!target) return;
 
-    // Si el objetivo intentaba huir (warp spooling), el ataque lo interrumpe
     if (target.spoolingWarp) {
       target.spoolingWarp = null;
-      logs.push(`¡El ataque sobre ${target.name} desestabilizó sus motores de salto! Salto abortado.`);
+      logs.push(`¡El impacto recibido por ${target.name} abortó su salto de curvatura!`);
     }
 
     let totalDmg = 0;
@@ -430,19 +432,30 @@ function handleDestruction(victim, killer) {
   if (victimSocket) {
     victimSocket.leave('nullsec');
     victimSocket.join('station');
-    victimSocket.emit('ship_destroyed', "Tu nave fue destruida. Toda tu carga de minerales quedó flotando en el pecio.");
+    victimSocket.emit('ship_destroyed', "Tu nave fue destruida. Toda tu carga de minerales quedó en el pecio.");
   }
 }
 
 io.on('connection', (socket) => {
-  socket.on('pilot_login', async (pilotName) => {
-    const cleanName = pilotName.trim().substring(0, 14) || `Cmdr_${socket.id.substring(0, 4)}`;
+  // AUTENTICACIÓN SEGURA CON BCRYPT
+  socket.on('pilot_login', async ({ name, password }) => {
+    const cleanName = (name || '').trim().substring(0, 14);
+    const cleanPass = (password || '').trim();
+
+    if (!cleanName || !cleanPass) {
+      socket.emit('login_error', "Debes ingresar tu nombre de piloto y contraseña.");
+      return;
+    }
 
     try {
       let saved = await Pilot.findOne({ name: cleanName });
+
       if (!saved) {
+        // Registro de piloto nuevo: hashear contraseña con 10 rondas de salt
+        const hash = await bcrypt.hash(cleanPass, 10);
         saved = await Pilot.create({
           name: cleanName,
+          passwordHash: hash,
           corp: "Sin Corp",
           wallet: 300,
           ore: 10,
@@ -452,6 +465,15 @@ io.on('connection', (socket) => {
           shield: 100,
           drones: { combat: 0, mining: 0 }
         });
+        console.log(`[AUTH]: Nuevo piloto registrado con clave encriptada: ${cleanName}`);
+      } else {
+        // Piloto existente: verificar coincidencia con bcrypt
+        const valid = await bcrypt.compare(cleanPass, saved.passwordHash);
+        if (!valid) {
+          socket.emit('login_error', "Contraseña incorrecta. Acceso denegado a la nave.");
+          return;
+        }
+        console.log(`[AUTH]: Acceso verificado para: ${cleanName}`);
       }
 
       const ship = SHIP_TYPES[saved.shipKey] || SHIP_TYPES.frigate;
@@ -484,13 +506,13 @@ io.on('connection', (socket) => {
 
       socket.join('station');
       socket.emit('login_success', universe.players[socket.id]);
-      io.emit('chat_broadcast', { channel: 'galaxy', sender: 'RED', text: `${saved.name} [${saved.corp}] ha entrado al universo.` });
+      io.emit('chat_broadcast', { channel: 'galaxy', sender: 'RED', text: `${saved.name} [${saved.corp}] ha iniciado sesión de forma segura.` });
     } catch (e) {
       console.error("Error login:", e.message);
+      socket.emit('login_error', "Error en el servidor de autenticación.");
     }
   });
 
-  // Salto con Alineación de Motores (Warp Spool-up: 5s en Nullsec, instantáneo en zonas seguras)
   socket.on('warp_to', (destination) => {
     const p = universe.players[socket.id];
     if (!p || p.sector === destination || p.spoolingWarp) return;
@@ -508,14 +530,12 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Si salta desde Nullsec, toma 5 segundos de alineación
     if (p.sector === 'nullsec') {
       p.spoolingWarp = { destination: destination, timer: 5 };
-      socket.emit('chat_broadcast', { channel: 'local', sender: 'NAVEGACIÓN', text: `Iniciando curvatura hacia ${universe.sectors[destination]?.name}. Motores alineando (5s)... ¡Cualquier impacto anulará el salto!` });
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'NAVEGACIÓN', text: `Iniciando curvatura hacia ${universe.sectors[destination]?.name}. Alineación en curso (5s)...` });
       return;
     }
 
-    // Salto inmediato en sectores seguros
     p.dronesDeployed = false;
     socket.leave(p.sector);
     p.sector = destination;
@@ -523,7 +543,6 @@ io.on('connection', (socket) => {
     p.order = 'none';
   });
 
-  // Minería Volátil de Alto Riesgo en Nullsec
   socket.on('mine_volatile_cycle', () => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'nullsec') return;
@@ -531,7 +550,7 @@ io.on('connection', (socket) => {
     const currentTotalCargo = (p.ore || 0) + (p.bistrimite || 0);
     const shipCap = p.cargoMax || 30;
     if (currentTotalCargo >= shipCap) {
-      socket.emit('chat_broadcast', { channel: 'local', sender: 'BODEGA', text: "Bodega al límite de capacidad." });
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'BODEGA', text: "Bodega al límite." });
       return;
     }
 
@@ -539,29 +558,24 @@ io.on('connection', (socket) => {
     const extracted = Math.min(shipCap - currentTotalCargo, 3 + miningLvl);
     p.bistrimite = (p.bistrimite || 0) + extracted;
 
-    // Alerta de firma en el radar del sector
     io.to('nullsec').emit('chat_broadcast', {
       channel: 'local',
-      sender: 'RADAR REGIONAL',
-      text: `¡Firma de extracción masiva detectada! Una nave está cosechando Bistrimita Volátil en coordenadas abiertas.`
+      sender: 'RADAR',
+      text: `¡Firma de extracción detectada! Nave cosechando Bistrimita Volátil en coordenadas abiertas.`
     });
 
-    // 25% de probabilidad de sobrecarga volátil
     if (Math.random() < 0.25) {
       p.cap = Math.max(0, p.cap - 25);
       applyDamage(p, 15);
       socket.emit('chat_broadcast', {
         channel: 'local',
         sender: 'ALERTA NAVE',
-        text: `¡DESCARGA VOLÁTIL! La veta de Bistrimita colapsó (-25 capacitor, -15 blindaje).`
+        text: `¡DESCARGA VOLÁTIL! La veta colapsó (-25 capacitor, -15 blindaje).`
       });
-      if (p.armor <= 0) {
-        handleDestruction(p, { name: "Anomalía Volátil", corp: "Entorno" });
-      }
+      if (p.armor <= 0) handleDestruction(p, { name: "Anomalía Volátil", corp: "Entorno" });
     }
   });
 
-  // Venta combinada en Estaciones
   socket.on('sell_all_minerals', () => {
     const p = universe.players[socket.id];
     if (!p || (p.sector !== 'station' && p.sector !== 'outpost')) return;
@@ -579,7 +593,7 @@ io.on('connection', (socket) => {
     socket.emit('chat_broadcast', {
       channel: 'local',
       sender: 'LOGÍSTICA',
-      text: `Venta liquidada: +${earnedBase} ISK por menas comunes y +${earnedVolatile} ISK por Bistrimita Volátil. Total neto: +${totalEarned} ISK.`
+      text: `Liquidación total: +${earnedBase} ISK por menas y +${earnedVolatile} ISK por Bistrimita. Total: +${totalEarned} ISK.`
     });
 
     p.ore = 0;
@@ -587,7 +601,6 @@ io.on('connection', (socket) => {
     syncPilotToCloud(p);
   });
 
-  // Saqueo ampliado de pecios
   socket.on('loot_wreck', (wreckId) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'nullsec') return;
@@ -607,15 +620,9 @@ io.on('connection', (socket) => {
       syncPilotToCloud(p);
 
       universe.sectors.nullsec.wrecks.splice(idx, 1);
-      socket.emit('chat_broadcast', {
-        channel: 'local',
-        sender: 'SAQUEO',
-        text: `Pecio desmantelado: +${takenBistrimite} Bistrimita, +${takenOre} Menas, +${w.credits} ISK.`
-      });
     }
   });
 
-  // Drones
   socket.on('buy_drone', (droneType) => {
     const p = universe.players[socket.id];
     if (!p || (p.sector !== 'station' && p.sector !== 'outpost')) return;
@@ -643,7 +650,6 @@ io.on('connection', (socket) => {
     p.dronesDeployed = !p.dronesDeployed;
   });
 
-  // Astillero
   socket.on('purchase_ship', (shipKey) => {
     const p = universe.players[socket.id];
     if (!p || (p.sector !== 'station' && p.sector !== 'outpost')) return;
@@ -661,7 +667,6 @@ io.on('connection', (socket) => {
     syncPilotToCloud(p);
   });
 
-  // Misiones
   socket.on('accept_mission', (missionId) => {
     const p = universe.players[socket.id];
     if (!p || (p.sector !== 'station' && p.sector !== 'outpost') || !MISSIONS_CATALOG[missionId]) return;
@@ -694,7 +699,6 @@ io.on('connection', (socket) => {
     };
   });
 
-  // Mercado
   socket.on('create_sell_order', async ({ amount, pricePerUnit }) => {
     const p = universe.players[socket.id];
     if (!p || (p.sector !== 'station' && p.sector !== 'outpost')) return;
@@ -753,7 +757,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Industria
   socket.on('start_industry_job', async (bpKey) => {
     const p = universe.players[socket.id];
     if (!p || p.sector !== 'station') return;
@@ -798,7 +801,6 @@ io.on('connection', (socket) => {
     cachedJobs = cachedJobs.filter(j => j.jobId !== jobId);
   });
 
-  // Habilidades
   socket.on('train_skill', (skillKey) => {
     const p = universe.players[socket.id];
     if (!p || !SKILL_DEFS[skillKey] || p.training) return;
@@ -816,7 +818,6 @@ io.on('connection', (socket) => {
     syncPilotToCloud(p);
   });
 
-  // Minería común
   socket.on('mine_cycle', () => {
     const p = universe.players[socket.id];
     if (p && p.sector === 'mining') {
@@ -834,7 +835,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Combate órdenes
   socket.on('set_order', (order) => {
     if (universe.players[socket.id]) {
       universe.players[socket.id].order = order;
@@ -902,5 +902,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Servidor MMO con Peligro Real corriendo en puerto ${PORT}`);
+  console.log(`Servidor MMO con Autenticación Segura corriendo en puerto ${PORT}`);
 });

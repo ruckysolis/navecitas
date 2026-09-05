@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sector 04 - MMO Espacial</title>
+  <title>Sector 04 - Rutas Comerciales y Transporte</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
     body { background-color: #070a0e; color: #79c0ff; font-family: 'Courier New', Courier, monospace; padding: 12px; margin: 0; }
@@ -16,19 +16,13 @@
     .bar-fill { height: 100%; transition: width 0.3s; }
     .shield-fill { background: #388bfd; }
     .armor-fill { background: #d29922; }
-    .cap-fill { background: #e3b341; }
-    .npc-fill { background: #ff7b72; }
+    .cargo-fill { background: #56d364; }
     .btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 10px; cursor: pointer; font-family: inherit; font-size: 0.85em; margin: 2px; }
     .btn:hover { background: #30363d; border-color: #8b949e; }
     .btn-warp { border-color: #a371f7; color: #d2a8ff; font-weight: bold; width: 100%; text-align: left; margin: 3px 0; }
     .btn-act { border-color: #238636; color: #3fb950; font-weight: bold; }
-    .btn-sos { border-color: #da3633; color: #f85149; font-weight: bold; }
-    .btn-loot { border-color: #e3b341; color: #e3b341; font-weight: bold; }
-    .btn-sov { border-color: #f0883e; color: #f0883e; font-weight: bold; }
-    .btn-buy { border-color: #388bfd; color: #79c0ff; font-weight: bold; }
-    .btn-ind { border-color: #e3b341; color: #f0883e; font-weight: bold; }
-    .btn-skill { border-color: #58a6ff; color: #58a6ff; font-weight: bold; }
-    .btn-mission { border-color: #f85149; color: #ff7b72; font-weight: bold; }
+    .btn-trade { border-color: #e3b341; color: #e3b341; font-weight: bold; }
+    .btn-ship { border-color: #388bfd; color: #79c0ff; font-weight: bold; }
 
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 14, 0.95); display: flex; justify-content: center; align-items: center; z-index: 100; }
     .login-box { background: #0d1117; border: 1px solid #1f6feb; padding: 24px; max-width: 360px; width: 90%; text-align: center; }
@@ -41,11 +35,6 @@
     #chat-box { height: 110px; overflow-y: auto; font-size: 0.8em; line-height: 1.4; color: #c9d1d9; }
     .chat-form { display: flex; gap: 4px; margin-top: 6px; }
     .chat-input { flex-grow: 1; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px; font-family: inherit; font-size: 0.8em; }
-    .sos-banner { background: #3b0d0c; border: 1px solid #da3633; padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; }
-
-    .market-table { width: 100%; border-collapse: collapse; font-size: 0.8em; margin-top: 6px; }
-    .market-table th, .market-table td { border: 1px solid #21262d; padding: 4px 6px; text-align: left; }
-    .market-table th { background: #161b22; color: #58a6ff; }
   </style>
 </head>
 <body>
@@ -53,127 +42,78 @@
 <div id="login-overlay">
   <div class="login-box">
     <h3 style="color: #58a6ff; margin-top: 0;">TERMINAL PILOTO // EVE TEXT</h3>
-    <p style="font-size: 0.85em; color: #8b949e;">Introduce tu nombre de comandante:</p>
-    <input type="text" id="login-name" class="login-input" placeholder="Cmdr_Vance" maxlength="14" autofocus>
+    <input type="text" id="login-name" class="login-input" placeholder="Nombre de piloto..." maxlength="14" autofocus>
     <br>
     <button class="btn btn-act" style="width: 90%; padding: 8px;" onclick="doLogin()">Entrar al Universo</button>
   </div>
 </div>
 
 <div class="panel">
-  <div id="sos-zone" style="display: none;"></div>
-
   <div class="header-bar">
-    <div><strong>SECTOR: <span id="sector-title" style="color: #e3b341;">...</span></strong></div>
+    <div><strong>UBICACIÓN: <span id="sector-title" style="color: #e3b341;">...</span></strong></div>
     <div>BILLETERA: <b id="my-wallet" style="color: #7ee787;">0</b> ISK</div>
   </div>
 
   <div class="grid">
-    <!-- Tu Nave -->
+    <!-- Ficha de Nave -->
     <div class="box">
-      <div style="color: #58a6ff; font-weight: bold;" id="my-name">[PILOTO ACTIVO]</div>
-      <div style="font-size: 0.8em; color: #d2a8ff;">Corp: <b id="my-corp">Sin Corp</b></div>
+      <div style="color: #58a6ff; font-weight: bold;" id="my-name">[PILOTO]</div>
+      <div style="font-size: 0.8em; color: #d2a8ff;">Corp: <b id="my-corp">Sin Corp</b> | Nave: <b id="my-ship" style="color:#e3b341;">...</b></div>
       <div style="font-size: 0.75em; margin-top:4px;">ESCUDO: <span id="my-shield">100</span>%</div>
       <div class="bar-track"><div id="bar-shield" class="bar-fill shield-fill"></div></div>
       <div style="font-size: 0.75em;">BLINDAJE: <span id="my-armor">100</span> / <span id="my-max-armor">100</span> HP</div>
       <div class="bar-track"><div id="bar-armor" class="bar-fill armor-fill"></div></div>
-      <div style="font-size: 0.75em;">CAPACITOR: <span id="my-cap">100</span> Gj</div>
-      <div class="bar-track"><div id="bar-cap" class="bar-fill cap-fill"></div></div>
-      <div style="font-size: 0.8em; margin-top: 6px;">Bodega de Carga: <b id="my-ore" style="color: #56d364;">0</b> m³ menas</div>
+      <div style="font-size: 0.75em;">BODEGA DE CARGA: <span id="my-ore">0</span> / <span id="my-cargo-max">30</span> m³</div>
+      <div class="bar-track"><div id="bar-cargo" class="bar-fill cargo-fill"></div></div>
     </div>
 
-    <!-- Navegación -->
+    <!-- Navegación por Stargates -->
     <div class="box">
-      <div style="color: #d2a8ff; font-weight: bold; margin-bottom: 6px;">COMPUTADORA DE SALTO:</div>
-      <button class="btn btn-warp" onclick="warpTo('station')">⏵ Saltar a Estación Central Jita</button>
-      <button class="btn btn-warp" onclick="warpTo('mining')">⏵ Saltar a Cinturón Veldspar-4</button>
-      <button class="btn btn-warp" onclick="warpTo('nullsec')">⏵ Saltar a Nullsec (Guerra / Soberanía)</button>
-      <button class="btn btn-mission" id="btn-warp-mission" style="display:none; width:100%; margin-top:4px;" onclick="socket.emit('warp_to_mission')">⚡ INTERCEPTAR SEÑAL HOSTIL (MISIÓN)</button>
+      <div style="color: #d2a8ff; font-weight: bold; margin-bottom: 4px;">PUERTAS DE SALTO DISPONIBLES:</div>
+      <div id="stargate-list" style="font-size: 0.8em;">Cargando coordenadas...</div>
     </div>
   </div>
 
-  <!-- Zona Interactiva de Sector -->
+  <!-- Zona Interactiva del Sector -->
   <div class="box" id="sector-actions"></div>
   <div id="wrecks-container" style="display: none; margin-top: 8px;"></div>
 
-  <!-- TABLÓN DE MISIONES Y CONTRATOS (En Hangar) -->
-  <div class="box" id="missions-section" style="display: none; margin-top: 10px;">
-    <div style="color: #ff7b72; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px;">
-      OFICINA DE SEGURIDAD // CONTRATOS DE CAZARRECOMPENSAS
+  <!-- ASTILLERO ESPACIAL (Solo en Estaciones) -->
+  <div class="box" id="shipyard-section" style="display: none; margin-top: 10px;">
+    <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px;">
+      ASTILLERO NAVAL // COMPRA Y CAMBIO DE NAVES
     </div>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; font-size: 0.8em;">
-      <div style="background:#010409; border:1px solid #30363d; padding:8px;">
-        <b>Caza: Corsaria 'Bloodhound'</b><br>
-        Blanco: Fragata Ligera (80 HP)<br>
-        Recompensa: <b style="color:#7ee787;">+150 ISK</b> + 10 m³ menas<br>
-        <button class="btn btn-mission" style="margin-top:4px;" onclick="acceptMission('pirate_scout')">Aceptar Contrato</button>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 8px; font-size: 0.8em;">
+      <div style="background:#010409; border:1px solid #30363d; padding:6px;">
+        <b>Fragata 'Rifter'</b><br>
+        Bodega: 30 m³ | Casco: 100 HP<br>
+        <span style="color:#7ee787;">Gratis / Reposición</span><br>
+        <button class="btn btn-ship" onclick="buyShip('frigate')">Abordar</button>
       </div>
-      <div style="background:#010409; border:1px solid #30363d; padding:8px;">
-        <b>Caza Mayor: 'Vindicator'</b><br>
-        Blanco: Crucero Pirata (160 HP)<br>
-        Recompensa: <b style="color:#7ee787;">+450 ISK</b> + 30 m³ menas<br>
-        <button class="btn btn-mission" style="margin-top:4px;" onclick="acceptMission('pirate_commander')">Aceptar Contrato</button>
+      <div style="background:#010409; border:1px solid #30363d; padding:6px;">
+        <b>Carguero 'Mammoth'</b><br>
+        Bodega: 250 m³ | Casco: 180 HP<br>
+        <span style="color:#e3b341;">500 ISK</span><br>
+        <button class="btn btn-ship" onclick="buyShip('freighter')">Comprar</button>
       </div>
-    </div>
-  </div>
-
-  <!-- HABILIDADES (En Hangar) -->
-  <div class="box" id="skills-section" style="display: none; margin-top: 10px;">
-    <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px; display: flex; justify-content: space-between;">
-      <span>INTERFAZ NEURAL // ÁRBOL DE HABILIDADES</span>
-      <span id="training-status-txt" style="color: #f0883e; font-size: 0.85em;">Sin entrenamiento</span>
-    </div>
-    <div id="skills-list" style="margin-top: 8px;"></div>
-  </div>
-
-  <!-- INDUSTRIA (En Hangar) -->
-  <div class="box" id="industry-section" style="display: none; margin-top: 10px;">
-    <div style="color: #f0883e; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px;">
-      CENTRO DE MANUFACTURA INDUSTRIAL
-    </div>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; font-size: 0.8em;">
-      <div style="background: #010409; padding: 8px; border: 1px solid #30363d;">
-        <b>Láser T2</b> (+20 daño)<br>25 m³ + 100 ISK | 30s<br>
-        <button class="btn btn-ind" style="margin-top: 4px;" onclick="startJob('laser_t2')">Fabricar</button>
-      </div>
-      <div style="background: #010409; padding: 8px; border: 1px solid #30363d;">
-        <b>Crucero 'Cerberus'</b> (150 HP)<br>60 m³ + 300 ISK | 60s<br>
-        <button class="btn btn-ind" style="margin-top: 4px;" onclick="startJob('heavy_cruiser')">Construir</button>
+      <div style="background:#010409; border:1px solid #30363d; padding:6px;">
+        <b>Crucero 'Cerberus'</b><br>
+        Bodega: 60 m³ | Casco: 150 HP (+20 dmg)<br>
+        <span style="color:#e3b341;">1,200 ISK</span><br>
+        <button class="btn btn-ship" onclick="buyShip('crucruiser')">Comprar</button>
       </div>
     </div>
-    <div style="margin-top: 8px; font-size: 0.82em;">
-      <b>PRODUCCIÓN ACTIVA:</b>
-      <div id="industry-jobs-list" style="margin-top: 4px;">Ninguna.</div>
-    </div>
-  </div>
-
-  <!-- MERCADO (En Hangar) -->
-  <div class="box" id="market-section" style="display: none; margin-top: 10px;">
-    <div style="color: #58a6ff; font-weight: bold; border-bottom: 1px solid #21262d; padding-bottom: 4px; display: flex; justify-content: space-between;">
-      <span>BOLSA DE COMERCIO REGIONAL JITA</span>
-      <span id="market-tax-info" style="font-size: 0.85em; color: #f0883e;">Impuesto: 0%</span>
-    </div>
-    <div style="margin-top: 8px; font-size: 0.82em; background: #010409; padding: 6px; border: 1px dashed #30363d;">
-      <b>CREAR ORDEN:</b> Vender 
-      <input type="number" id="sell-amount" style="width: 50px; background:#0d1117; border:1px solid #30363d; color:#79c0ff;" placeholder="Cant"> m³ a 
-      <input type="number" id="sell-price" style="width: 50px; background:#0d1117; border:1px solid #30363d; color:#79c0ff;" placeholder="ISK/u"> ISK c/u 
-      <button class="btn btn-act" onclick="createOrder()">Publicar</button>
-    </div>
-    <table class="market-table">
-      <thead><tr><th>Vendedor</th><th>Cantidad</th><th>Precio/u</th><th>Total</th><th>Acción</th></tr></thead>
-      <tbody id="market-tbody"><tr><td colspan="5">No hay órdenes.</td></tr></tbody>
-    </table>
   </div>
 
   <!-- Chat -->
   <div class="chat-section">
     <div class="chat-tabs">
-      <button class="chat-tab active" id="tab-galaxy" onclick="switchChat('galaxy')">CANAL GALAXIA</button>
-      <button class="chat-tab" id="tab-local" onclick="switchChat('local')">CANAL LOCAL</button>
+      <button class="chat-tab active" id="tab-galaxy" onclick="switchChat('galaxy')">GALAXIA</button>
+      <button class="chat-tab" id="tab-local" onclick="switchChat('local')">LOCAL</button>
     </div>
-    <div id="chat-box">--- Conexión establecida ---</div>
+    <div id="chat-box">--- Conectado ---</div>
     <form class="chat-form" onsubmit="sendChat(event)">
-      <input type="text" id="chat-input" class="chat-input" placeholder="Transmitir mensaje..." autocomplete="off">
+      <input type="text" id="chat-input" class="chat-input" placeholder="Transmitir..." autocomplete="off">
       <button type="submit" class="btn btn-act">Enviar</button>
     </form>
   </div>
@@ -184,20 +124,13 @@
   let myPilot = null;
   let activeChannel = 'galaxy';
 
-  const SKILL_CATALOG = [
-    { key: 'gunnery', name: 'Balística Espacial', desc: '+10% daño por nivel' },
-    { key: 'armor_upgrade', name: 'Gestión de Blindaje', desc: '+15 HP casco por nivel' },
-    { key: 'mining_efficiency', name: 'Extracción Minera', desc: '+2 m³ menas por nivel' }
-  ];
-
   function doLogin() {
     const val = document.getElementById('login-name').value;
-    if (!val.trim()) return;
-    socket.emit('pilot_login', val);
+    if (val.trim()) socket.emit('pilot_login', val);
   }
 
-  socket.on('login_success', (pilot) => {
-    myPilot = pilot;
+  socket.on('login_success', (p) => {
+    myPilot = p;
     document.getElementById('login-overlay').style.display = 'none';
   });
 
@@ -216,47 +149,18 @@
   function sendChat(e) {
     e.preventDefault();
     const inp = document.getElementById('chat-input');
-    if (!inp.value.trim()) return;
-    socket.emit('send_chat', { channel: activeChannel, text: inp.value });
-    inp.value = '';
+    if (inp.value.trim()) {
+      socket.emit('send_chat', { channel: activeChannel, text: inp.value });
+      inp.value = '';
+    }
   }
 
   function warpTo(sec) { socket.emit('warp_to', sec); }
-  function emitSOS() { socket.emit('send_sos'); }
-  function lootWreck(id) { socket.emit('loot_wreck', id); }
-  function startJob(bpKey) { socket.emit('start_industry_job', bpKey); }
-  function claimJob(jobId) { socket.emit('claim_industry_job', jobId); }
-  function trainSkill(key) { socket.emit('train_skill', key); }
-  function acceptMission(id) { socket.emit('accept_mission', id); }
+  function buyShip(key) { socket.emit('purchase_ship', key); }
 
-  function setCorporation() {
-    const tag = prompt("Tag de Corporación (máx 5 letras, ej: VOID):");
-    if (tag) socket.emit('set_corp', tag);
-  }
-
-  function createOrder() {
-    const amount = document.getElementById('sell-amount').value;
-    const price = document.getElementById('sell-price').value;
-    socket.emit('create_sell_order', { amount, pricePerUnit: price });
-  }
-
-  function buyOrder(id) { socket.emit('buy_market_order', id); }
-  function cancelOrder(id) { socket.emit('cancel_market_order', id); }
-
-  socket.on('chat_broadcast', (data) => {
-    const color = data.channel === 'galaxy' ? '#79c0ff' : '#56d364';
-    appendChat(`<span style="color:${color};">[${data.channel.toUpperCase()}] <b>${data.sender}:</b></span> ${data.text}`);
-  });
-
-  socket.on('sos_alert', (data) => {
-    const banner = document.getElementById('sos-zone');
-    banner.style.display = 'flex';
-    banner.className = 'sos-banner';
-    banner.innerHTML = `
-      <span><b style="color:#f85149;">¡ALERTA S.O.S.!</b> ${data.pilot} bajo fuego en ${data.sectorName}.</span>
-      <button class="btn btn-sos" onclick="warpTo('${data.sectorId}')">SALTAR A DEFENDER</button>
-    `;
-    setTimeout(() => { banner.style.display = 'none'; }, 15000);
+  socket.on('chat_broadcast', (d) => {
+    const col = d.channel === 'galaxy' ? '#79c0ff' : '#56d364';
+    appendChat(`<span style="color:${col};">[${d.channel.toUpperCase()}] <b>${d.sender}:</b></span> ${d.text}`);
   });
 
   socket.on('universe_tick', (data) => {
@@ -264,155 +168,94 @@
     const me = data.players[socket.id];
     if (!me) return;
 
-    const secInfo = data.sectors[me.sector] || { name: "Cuadrante de Intercepción PvE" };
+    const currentSec = data.sectors[me.sector];
+    const shipInfo = data.shipCatalog ? data.shipCatalog[me.shipKey] : null;
 
-    document.getElementById('sector-title').innerText = secInfo.name;
-    document.getElementById('my-name').innerText = `[TU NAVE] ${me.name}`;
+    document.getElementById('sector-title').innerText = currentSec.name;
+    document.getElementById('my-name').innerText = `[PILOTO] ${me.name}`;
     document.getElementById('my-corp').innerText = `[${me.corp}]`;
+    document.getElementById('my-ship').innerText = shipInfo ? shipInfo.name : me.shipKey;
     document.getElementById('my-wallet').innerText = me.wallet;
     document.getElementById('my-shield').innerText = me.shield;
     document.getElementById('my-armor').innerText = me.armor;
     document.getElementById('my-max-armor').innerText = me.maxArmor || 100;
-    document.getElementById('my-cap').innerText = me.cap;
     document.getElementById('my-ore').innerText = me.ore;
+    document.getElementById('my-cargo-max').innerText = me.cargoMax || 30;
 
     document.getElementById('bar-shield').style.width = me.shield + '%';
     const armorPct = Math.round((me.armor / (me.maxArmor || 100)) * 100);
     document.getElementById('bar-armor').style.width = armorPct + '%';
-    document.getElementById('bar-cap').style.width = me.cap + '%';
+    const cargoPct = Math.min(100, Math.round((me.ore / (me.cargoMax || 30)) * 100));
+    document.getElementById('bar-cargo').style.width = cargoPct + '%';
 
-    // Botón de salto de misión
-    const btnMission = document.getElementById('btn-warp-mission');
-    if (me.activeMission && me.sector === 'station') {
-      btnMission.style.display = 'block';
-    } else {
-      btnMission.style.display = 'none';
-    }
+    // Rutas de salto válidas
+    const stargatesDiv = document.getElementById('stargate-list');
+    const jumpRoutes = {
+      'station': [{ to: 'mining', name: 'Cinturón Veldspar-4' }, { to: 'nullsec', name: 'Sector Abisal Nullsec' }],
+      'mining': [{ to: 'station', name: 'Estación Central Jita' }],
+      'nullsec': [{ to: 'station', name: 'Estación Central Jita' }, { to: 'outpost', name: 'Outpost 73 (Outer Ring)' }],
+      'outpost': [{ to: 'nullsec', name: 'Sector Abisal Nullsec' }]
+    };
+
+    const routes = jumpRoutes[me.sector] || [];
+    stargatesDiv.innerHTML = routes.map(r => `
+      <button class="btn btn-warp" onclick="warpTo('${r.to}')">⏵ Salto a: ${r.name}</button>
+    `).join('');
 
     const actionsBox = document.getElementById('sector-actions');
+    const shipyardBox = document.getElementById('shipyard-section');
     const wrecksBox = document.getElementById('wrecks-container');
-    const marketBox = document.getElementById('market-section');
-    const indBox = document.getElementById('industry-section');
-    const skillsBox = document.getElementById('skills-section');
-    const missionsBox = document.getElementById('missions-section');
 
-    if (me.sector === 'station') {
+    if (me.sector === 'station' || me.sector === 'outpost') {
+      shipyardBox.style.display = 'block';
       wrecksBox.style.display = 'none';
-      marketBox.style.display = 'block';
-      indBox.style.display = 'block';
-      skillsBox.style.display = 'block';
-      missionsBox.style.display = 'block';
-
-      // Habilidades
-      const now = Date.now();
-      const statusTxt = document.getElementById('training-status-txt');
-      if (me.training) {
-        const remSec = Math.max(0, Math.round((me.training.finishAt - now) / 1000));
-        statusTxt.innerHTML = `<b style="color:#58a6ff;">⚙ ${me.training.skillName} ${me.training.targetLevel} (${remSec}s)</b>`;
-      } else {
-        statusTxt.innerText = "Cola neural libre";
-      }
-
-      document.getElementById('skills-list').innerHTML = SKILL_CATALOG.map(sk => {
-        const cur = me.skills ? (me.skills[sk.key] || 0) : 0;
-        let btn = cur >= 5 ? `<span style="color:#7ee787;">MAESTRÍA (V)</span>` :
-          (me.training?.skillKey === sk.key ? `<span style="color:#f0883e;">EN COLA...</span>` :
-          `<button class="btn btn-skill" onclick="trainSkill('${sk.key}')" ${me.training ? 'disabled':''}>Entrenar Nivel ${cur+1}</button>`);
-        return `<div style="display:flex; justify-content:space-between; border-bottom:1px dashed #21262d; padding:4px 0;"><span><b>${sk.name}</b> [Nvl ${cur}/5] - <small style="color:#8b949e;">${sk.desc}</small></span><div>${btn}</div></div>`;
-      }).join('');
-
-      // Industria
-      document.getElementById('industry-jobs-list').innerHTML = (data.industryJobs || []).filter(j => j.pilot === me.name).map(j => {
-        const rem = Math.max(0, Math.round((j.completesAt - now) / 1000));
-        return rem === 0 || j.completed ? `<div>✔ <b>${j.blueprintName}</b> <button class="btn btn-act" onclick="claimJob(${j.id})">Entregar</button></div>` : `<div>⚙ ${j.blueprintName} (${rem}s)</div>`;
-      }).join('') || `<span style="color:#8b949e;">Ninguna.</span>`;
-
-      // Mercado
-      document.getElementById('market-tbody').innerHTML = (data.market || []).map(o => {
-        const isMine = o.seller === me.name;
-        const total = o.amount * o.pricePerUnit;
-        const btn = isMine ? `<button class="btn btn-sos" onclick="cancelOrder(${o.id})">Cancelar</button>` : `<button class="btn btn-buy" onclick="buyOrder(${o.id})">Comprar</button>`;
-        return `<tr><td>[${o.corp}] ${o.seller}</td><td>${o.amount} m³</td><td>${o.pricePerUnit} ISK</td><td>${total} ISK</td><td>${btn}</td></tr>`;
-      }).join('') || `<tr><td colspan="5" style="color:#8b949e;">Sin ofertas.</td></tr>`;
+      const buyPrice = currentSec.npcBuyPrice;
 
       actionsBox.innerHTML = `
-        <b style="color:#58a6ff;">SERVICIOS DE LA ESTACIÓN:</b><br>
-        <button class="btn" onclick="setCorporation()">Gestionar Corporación</button>
+        <b style="color:#58a6ff;">SERVICIOS COMERCIALES DE ${currentSec.name.toUpperCase()}:</b><br>
+        <span>Precio de compra local de mineral: <b style="color:#7ee787;">${buyPrice} ISK/m³</b></span><br>
+        <button class="btn btn-trade" onclick="socket.emit('sell_ore_station')">Vender Todo el Mineral (+${me.ore * buyPrice} ISK)</button>
         <button class="btn" onclick="socket.emit('repair')">Reparar Casco (50 ISK)</button>
       `;
     } else if (me.sector === 'mining') {
+      shipyardBox.style.display = 'none';
       wrecksBox.style.display = 'none';
-      marketBox.style.display = 'none';
-      indBox.style.display = 'none';
-      skillsBox.style.display = 'none';
-      missionsBox.style.display = 'none';
-      const eff = me.skills?.mining_efficiency || 0;
       actionsBox.innerHTML = `
-        <b style="color:#56d364;">CINTURÓN VELDSPAR-4:</b><br>
-        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser (+${5 + (eff*2)} menas)</button>
+        <b style="color:#56d364;">CINTURÓN DE EXTRACCIÓN:</b><br>
+        <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Extraer Mineral (+m³)</button>
       `;
     } else if (me.sector === 'nullsec') {
-      marketBox.style.display = 'none';
-      indBox.style.display = 'none';
-      skillsBox.style.display = 'none';
-      missionsBox.style.display = 'none';
-      const sov = secInfo.sovereignty;
+      shipyardBox.style.display = 'none';
+      const sov = currentSec.sovereignty;
       actionsBox.innerHTML = `
-        <div style="border-bottom: 1px dashed #30363d; padding-bottom: 6px; margin-bottom: 6px;">
-          SOBERANÍA: <b style="color:#f0883e;">[${sov.ownerCorp}]</b> (${sov.progress}%)
-          <button class="btn btn-sov" style="margin-left: 8px;" onclick="socket.emit('capture_sov')">Reclamar Baliza</button>
+        <div style="border-bottom: 1px dashed #30363d; padding-bottom: 4px; margin-bottom: 4px;">
+          SOBERANÍA DEL PASO: <b style="color:#f0883e;">[${sov.ownerCorp}]</b> (${sov.progress}%)
+          <button class="btn btn-ship" onclick="socket.emit('capture_sov')">Reclamar</button>
         </div>
-        <b style="color:#ff7b72;">SECTOR NULLSEC // RELOJ: ${secInfo.timer}s (Ronda ${secInfo.round})</b><br>
+        <b style="color:#ff7b72;">¡ZONA DE RIESGO // COMBATE ACTIVO! (Reloj: ${currentSec.timer}s)</b><br>
         <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Salva (-25 Gj)</button>
         <button class="btn" onclick="socket.emit('set_order', 'defense')">Reforzar Escudo (-20 Gj)</button>
-        <button class="btn btn-sos" onclick="emitSOS()">Emitir S.O.S.</button>
         <span style="font-size:0.8em; margin-left:8px; color:#f0883e;">Orden: ${me.order.toUpperCase()}</span>
       `;
 
-      if (secInfo.wrecks && secInfo.wrecks.length > 0) {
+      if (currentSec.wrecks && currentSec.wrecks.length > 0) {
         wrecksBox.style.display = 'block';
-        wrecksBox.innerHTML = `<b style="color:#e3b341;">RESTOS EN EL SECTOR:</b>` +
-          secInfo.wrecks.map(w => `
-            <div style="background:#161b22; border:1px dashed #e3b341; padding:4px 8px; margin-top:4px; display:flex; justify-content:space-between; align-items:center;">
-              <span>${w.name} (${w.ore} m³ menas, +${w.credits} ISK)</span>
-              <button class="btn btn-loot" onclick="lootWreck(${w.id})">Saquear Pecio</button>
+        wrecksBox.innerHTML = `<b style="color:#e3b341;">PECIOS FLOTANDO:</b>` +
+          currentSec.wrecks.map(w => `
+            <div style="background:#161b22; border:1px dashed #e3b341; padding:4px 8px; margin-top:4px; display:flex; justify-content:space-between; align-items:center; font-size:0.8em;">
+              <span>${w.name} (+${w.ore} m³ menas)</span>
+              <button class="btn btn-trade" onclick="socket.emit('loot_wreck', ${w.id})">Saquear</button>
             </div>
           `).join('');
       } else {
         wrecksBox.style.display = 'none';
-      }
-    } else if (me.sector === 'pve') {
-      // PANTALLA DE COMBATE CONTRA NPC
-      wrecksBox.style.display = 'none';
-      marketBox.style.display = 'none';
-      indBox.style.display = 'none';
-      skillsBox.style.display = 'none';
-      missionsBox.style.display = 'none';
-
-      const enc = data.pveEncounters ? data.pveEncounters[me.name] : null;
-      if (enc) {
-        const npcPct = Math.round((enc.npcArmor / enc.npcMaxArmor) * 100);
-        actionsBox.innerHTML = `
-          <div style="background:#1c0d0d; border:1px solid #da3633; padding:8px; margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; color:#ff7b72; font-weight:bold;">
-              <span>[OBJETIVO HOSTIL] ${enc.targetName}</span>
-              <span>BLINDAJE: ${enc.npcArmor} / ${enc.npcMaxArmor} HP</span>
-            </div>
-            <div class="bar-track"><div class="bar-fill npc-fill" style="width:${npcPct}%;"></div></div>
-          </div>
-          <b style="color:#f0883e;">TURNO PVE // RESOLUCIÓN EN: ${enc.timer}s (Ronda ${enc.round})</b><br>
-          <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Baterías (-25 Gj)</button>
-          <button class="btn" onclick="socket.emit('set_order', 'defense')">Reforzar Escudo (-20 Gj)</button>
-          <button class="btn btn-warp" style="width:auto; margin-left:8px;" onclick="warpTo('station')">Huir a Estación</button>
-          <span style="font-size:0.8em; margin-left:8px; color:#f0883e;">Orden: ${me.order.toUpperCase()}</span>
-        `;
       }
     }
   });
 
   socket.on('ship_destroyed', (msg) => alert(msg));
   socket.on('combat_log', (logs) => {
-    appendChat(`<span style="color:#f0883e;"><b>[INFORME TÁCTICO]:</b></span>`);
+    appendChat(`<span style="color:#f0883e;"><b>[COMBATE NULLSEC]:</b></span>`);
     logs.forEach(l => appendChat(`> ${l}`));
   });
 </script>

@@ -457,6 +457,7 @@
       errMsg.style.display = 'block';
       return;
     }
+    // Debe enviar un objeto con { name, password }
     socket.emit('pilot_login', { name, password: pass });
   }
 

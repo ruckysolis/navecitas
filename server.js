@@ -4,6 +4,8 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 
+const { SHIP_TYPES, DRONE_TYPES, SKILL_DEFS, BLUEPRINTS, MISSIONS_CATALOG } = require('./game/catalog');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -16,30 +18,7 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log(">>> [BD EN LA NUBE]: Conexión exitosa a MongoDB Atlas <<<"))
   .catch(err => console.error("Error al conectar a MongoDB:", err.message));
 
-// Catálogos globales
-const SHIP_TYPES = {
-  'frigate': { name: "Fragata 'Rifter'", cargoMax: 30, baseArmor: 100, dmgBonus: 0, cost: 0 },
-  'freighter': { name: "Carguero Pesado 'Mammoth'", cargoMax: 250, baseArmor: 180, dmgBonus: -10, cost: 500 },
-  'cruiser': { name: "Crucero de Asalto 'Cerberus'", cargoMax: 60, baseArmor: 150, dmgBonus: 20, cost: 1200 }
-};
-
-const SKILL_DEFS = {
-  'gunnery': { name: "Balística Espacial", desc: "+10% daño por nivel", baseTimeSec: 30, maxLevel: 5 },
-  'armor_upgrade': { name: "Gestión de Blindaje", desc: "+15 HP casco por nivel", baseTimeSec: 40, maxLevel: 5 },
-  'mining_efficiency': { name: "Extracción Minera", desc: "+2 m³ menas por nivel", baseTimeSec: 25, maxLevel: 5 }
-};
-
-const BLUEPRINTS = {
-  'laser_t2': { name: "Láser de Pulso T2", type: 'module', oreCost: 25, fee: 100, buildTimeSec: 30 },
-  'heavy_cruiser': { name: "Crucero de Asalto 'Cerberus'", type: 'ship', oreCost: 60, fee: 300, buildTimeSec: 60 }
-};
-
-const MISSIONS_CATALOG = {
-  'pirate_scout': { id: 'pirate_scout', title: "Caza: Explorador Pirata", targetName: "Fragata Corsaria 'Bloodhound'", hp: 80, dmg: 18, bounty: 150, lootOre: 10 },
-  'pirate_commander': { id: 'pirate_commander', title: "Caza Mayor: Comandante", targetName: "Crucero Pirata 'Vindicator'", hp: 160, dmg: 28, bounty: 450, lootOre: 30 }
-};
-
-// Esquemas de MongoDB
+// Esquemas de MongoDB con bahía de drones
 const PilotSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   corp: { type: String, default: "Sin Corp" },
@@ -49,10 +28,15 @@ const PilotSchema = new mongoose.Schema({
   armor: { type: Number, default: 100 },
   shield: { type: Number, default: 100 },
   weaponBonus: { type: Number, default: 0 },
+  drones: {
+    combat: { type: Number, default: 0 },
+    mining: { type: Number, default: 0 }
+  },
   skills: {
     gunnery: { type: Number, default: 0 },
     armor_upgrade: { type: Number, default: 0 },
-    mining_efficiency: { type: Number, default: 0 }
+    mining_efficiency: { type: Number, default: 0 },
+    drone_interfacing: { type: Number, default: 0 }
   },
   training: {
     skillKey: String,
@@ -128,6 +112,7 @@ async function syncPilotToCloud(p) {
         armor: p.armor,
         shield: p.shield,
         weaponBonus: p.weaponBonus,
+        drones: p.drones,
         skills: p.skills,
         training: p.training,
         activeMission: p.activeMission
@@ -148,14 +133,14 @@ setInterval(async () => {
     const p = universe.players[id];
     if (p.training && now >= p.training.finishAt) {
       const skKey = p.training.skillKey;
-      p.skills = p.skills || { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0 };
+      p.skills = p.skills || {};
       p.skills[skKey] = (p.skills[skKey] || 0) + 1;
       const skName = SKILL_DEFS[skKey]?.name || skKey;
       const newLvl = p.skills[skKey];
       p.training = null;
 
       const shipBase = SHIP_TYPES[p.shipKey]?.baseArmor || 100;
-      p.maxArmor = shipBase + (p.skills.armor_upgrade * 15);
+      p.maxArmor = shipBase + ((p.skills.armor_upgrade || 0) * 15);
       syncPilotToCloud(p);
 
       const sock = io.sockets.sockets.get(p.id);
@@ -165,7 +150,30 @@ setInterval(async () => {
     }
   }
 
-  // 2. Combate PvP en Nullsec
+  // 2. Acción pasiva de Drones Mineros (cada 5 segundos)
+  if (Math.floor(now / 1000) % 5 === 0) {
+    for (let id in universe.players) {
+      const p = universe.players[id];
+      if (p.sector === 'mining' && p.dronesDeployed && p.drones?.mining > 0) {
+        const droneSkillBonus = 1 + ((p.skills?.drone_interfacing || 0) * 0.10);
+        const yieldPerDrone = Math.round(DRONE_TYPES.mining_drone.yield * droneSkillBonus);
+        const totalYield = p.drones.mining * yieldPerDrone;
+        const spaceLeft = (p.cargoMax || 30) - p.ore;
+        const taken = Math.min(spaceLeft, totalYield);
+
+        if (taken > 0) {
+          p.ore += taken;
+          universe.sectors.mining.asteroidHp = Math.max(0, universe.sectors.mining.asteroidHp - 5);
+          const sock = io.sockets.sockets.get(p.id);
+          if (sock) {
+            sock.emit('chat_broadcast', { channel: 'local', sender: 'DRONES', text: `Drones mineros depositaron +${taken} m³ en bodega.` });
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Combate PvP en Nullsec
   const nullsecCombatants = Object.values(universe.players).filter(p => p.sector === 'nullsec' && p.armor > 0);
   if (nullsecCombatants.length >= 2) {
     universe.sectors.nullsec.timer--;
@@ -178,7 +186,7 @@ setInterval(async () => {
     universe.sectors.nullsec.timer = 20;
   }
 
-  // 3. Combate PvE por turnos
+  // 4. Combate PvE por turnos
   for (let pilotName in universe.pveEncounters) {
     const enc = universe.pveEncounters[pilotName];
     const player = Object.values(universe.players).find(p => p.name === pilotName && p.sector === 'pve');
@@ -192,7 +200,7 @@ setInterval(async () => {
     }
   }
 
-  // 4. Cola de Industria
+  // 5. Industria
   cachedJobs.forEach(async (job) => {
     if (!job.completed && now >= job.completesAt) {
       job.completed = true;
@@ -216,7 +224,8 @@ setInterval(async () => {
     market: cachedMarket,
     industryJobs: cachedJobs,
     pveEncounters: universe.pveEncounters,
-    shipCatalog: SHIP_TYPES
+    shipCatalog: SHIP_TYPES,
+    droneCatalog: DRONE_TYPES
   });
 }, 1000);
 
@@ -224,21 +233,31 @@ function resolvePveTurn(player, enc) {
   player.cap = Math.min(100, player.cap + 15);
   let logs = [];
 
+  // Daño principal
+  let totalDmg = 0;
   if (player.order === 'attack' && player.cap >= 25) {
     player.cap -= 25;
     let shipBonus = SHIP_TYPES[player.shipKey]?.dmgBonus || 0;
     let baseDmg = 30 + shipBonus + (player.weaponBonus || 0);
     let skillBonus = 1 + ((player.skills?.gunnery || 0) * 0.10);
-    let totalDmg = Math.max(5, Math.round(baseDmg * skillBonus));
-
-    enc.npcArmor = Math.max(0, enc.npcArmor - totalDmg);
-    logs.push(`Disparaste salva contra ${enc.targetName} (-${totalDmg} daño).`);
+    totalDmg += Math.max(5, Math.round(baseDmg * skillBonus));
   } else if (player.order === 'defense' && player.cap >= 20) {
     player.cap -= 20;
     player.shield = Math.min(100, player.shield + 25);
     logs.push("Regeneraste escudos (+25%).");
-  } else {
-    logs.push("Sistemas en reposo.");
+  }
+
+  // Daño adicional de drones de combate desplegados
+  if (player.dronesDeployed && player.drones?.combat > 0) {
+    let droneBonus = 1 + ((player.skills?.drone_interfacing || 0) * 0.10);
+    let droneDmg = Math.round(player.drones.combat * DRONE_TYPES.combat_drone.dps * droneBonus);
+    totalDmg += droneDmg;
+    logs.push(`Tus ${player.drones.combat} drones hostigaron al objetivo (-${droneDmg} daño).`);
+  }
+
+  if (totalDmg > 0) {
+    enc.npcArmor = Math.max(0, enc.npcArmor - totalDmg);
+    logs.push(`Impacto total sobre ${enc.targetName}: -${totalDmg} daño.`);
   }
   player.order = 'none';
 
@@ -277,6 +296,7 @@ function resolvePveTurn(player, enc) {
     player.sector = 'station';
     player.armor = 25;
     player.shield = 0;
+    player.dronesDeployed = false;
     syncPilotToCloud(player);
 
     const sock = io.sockets.sockets.get(player.id);
@@ -301,23 +321,31 @@ function resolveCombat(combatants) {
     const target = combatants.find(p => p.id !== attacker.id && p.armor > 0 && (p.corp === "Sin Corp" || p.corp !== attacker.corp));
     if (!target) return;
 
+    let totalDmg = 0;
     if (attacker.order === 'attack' && attacker.cap >= 25) {
       attacker.cap -= 25;
       let shipBonus = SHIP_TYPES[attacker.shipKey]?.dmgBonus || 0;
       let baseDmg = target.order === 'defense' ? 15 : 35;
       let skillBonus = 1 + ((attacker.skills?.gunnery || 0) * 0.10);
-      let totalDmg = Math.max(5, Math.round((baseDmg + shipBonus + (attacker.weaponBonus || 0)) * skillBonus));
-
-      applyDamage(target, totalDmg);
-      logs.push(`[${attacker.corp}] ${attacker.name} impactó a [${target.corp}] ${target.name} (-${totalDmg} daño).`);
-
-      if (target.armor <= 0) {
-        handleDestruction(target, attacker);
-      }
+      totalDmg += Math.max(5, Math.round((baseDmg + shipBonus + (attacker.weaponBonus || 0)) * skillBonus));
     } else if (attacker.order === 'defense' && attacker.cap >= 20) {
       attacker.cap -= 20;
       attacker.shield = Math.min(100, attacker.shield + 20);
       logs.push(`${attacker.name} reforzó defensas.`);
+    }
+
+    // Drones en PvP
+    if (attacker.dronesDeployed && attacker.drones?.combat > 0) {
+      let droneBonus = 1 + ((attacker.skills?.drone_interfacing || 0) * 0.10);
+      let droneDmg = Math.round(attacker.drones.combat * DRONE_TYPES.combat_drone.dps * droneBonus);
+      totalDmg += droneDmg;
+      logs.push(`Drones de ${attacker.name} atacaron a ${target.name} (-${droneDmg} daño).`);
+    }
+
+    if (totalDmg > 0) {
+      applyDamage(target, totalDmg);
+      logs.push(`[${attacker.corp}] ${attacker.name} impactó a [${target.corp}] ${target.name} (-${totalDmg} daño total).`);
+      if (target.armor <= 0) handleDestruction(target, attacker);
     }
     attacker.order = 'none';
   });
@@ -352,7 +380,7 @@ function handleDestruction(victim, killer) {
   io.emit('chat_broadcast', {
     channel: 'galaxy',
     sender: 'BAJA CONFIRMADA',
-    text: `Flota de [${killer.corp}] destruyó a [${victim.corp}] ${victim.name} en Nullsec.`
+    text: `Flota de [${killer.corp}] destruyó a [${victim.corp}] ${victim.name}.`
   });
 
   victim.ore = 0;
@@ -361,17 +389,19 @@ function handleDestruction(victim, killer) {
   victim.armor = 30;
   victim.shield = 0;
   victim.order = 'none';
+  victim.dronesDeployed = false;
+  victim.drones = { combat: 0, mining: 0 }; // Se pierden los drones al ser destruido
   syncPilotToCloud(victim);
 
   const victimSocket = io.sockets.sockets.get(victim.id);
   if (victimSocket) {
     victimSocket.leave('nullsec');
     victimSocket.join('station');
-    victimSocket.emit('ship_destroyed', "Tu nave fue destruida. Cápsula eyectada a la Estación.");
+    victimSocket.emit('ship_destroyed', "Tu nave y drones fueron aniquilados. Cápsula eyectada a la Estación.");
   }
 }
 
-// Eventos de red
+// Sockets
 io.on('connection', (socket) => {
   socket.on('pilot_login', async (pilotName) => {
     const cleanName = pilotName.trim().substring(0, 14) || `Cmdr_${socket.id.substring(0, 4)}`;
@@ -386,7 +416,8 @@ io.on('connection', (socket) => {
           ore: 10,
           shipKey: 'frigate',
           armor: 100,
-          shield: 100
+          shield: 100,
+          drones: { combat: 0, mining: 0 }
         });
       }
 
@@ -403,11 +434,14 @@ io.on('connection', (socket) => {
         armor: saved.armor,
         maxArmor: maxArmorCalc,
         cargoMax: ship.cargoMax,
+        droneCapacity: ship.droneCapacity || 0,
+        drones: saved.drones || { combat: 0, mining: 0 },
+        dronesDeployed: false,
         cap: 100,
         ore: saved.ore,
         wallet: saved.wallet,
         weaponBonus: saved.weaponBonus || 0,
-        skills: saved.skills || { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0 },
+        skills: saved.skills || { gunnery: 0, armor_upgrade: 0, mining_efficiency: 0, drone_interfacing: 0 },
         training: saved.training || null,
         activeMission: saved.activeMission || null,
         order: 'none'
@@ -421,7 +455,51 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Stargates con navegación restringida
+  // Compra de drones en la estación
+  socket.on('buy_drone', (droneType) => {
+    const p = universe.players[socket.id];
+    if (!p || (p.sector !== 'station' && p.sector !== 'outpost')) return;
+
+    const drone = DRONE_TYPES[droneType];
+    if (!drone || p.wallet < drone.cost) return;
+
+    const currentTotalDrones = (p.drones.combat || 0) + (p.drones.mining || 0);
+    const shipMaxDrones = SHIP_TYPES[p.shipKey]?.droneCapacity || 0;
+
+    if (currentTotalDrones >= shipMaxDrones) {
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'HANGAR', text: `Tu nave no tiene más bahías de drones disponibles (Máx: ${shipMaxDrones}).` });
+      return;
+    }
+
+    p.wallet -= drone.cost;
+    p.drones[drone.type] = (p.drones[drone.type] || 0) + 1;
+    syncPilotToCloud(p);
+
+    socket.emit('chat_broadcast', {
+      channel: 'local',
+      sender: 'HANGAR',
+      text: `Dron [${drone.name}] ensamblado y cargado en tu bahía.`
+    });
+  });
+
+  // Desplegar / Retirar drones
+  socket.on('toggle_drones', () => {
+    const p = universe.players[socket.id];
+    if (!p) return;
+    const hasDrones = (p.drones.combat > 0 || p.drones.mining > 0);
+    if (!hasDrones) {
+      socket.emit('chat_broadcast', { channel: 'local', sender: 'SISTEMAS', text: "No tienes drones equipados en la bahía." });
+      return;
+    }
+    p.dronesDeployed = !p.dronesDeployed;
+    socket.emit('chat_broadcast', {
+      channel: 'local',
+      sender: 'SISTEMAS',
+      text: p.dronesDeployed ? "¡Drones desplegados en el espacio!" : "Drones acoplados en el hangar interno."
+    });
+  });
+
+  // Stargates
   socket.on('warp_to', (destination) => {
     const p = universe.players[socket.id];
     if (!p || p.sector === destination) return;
@@ -439,6 +517,7 @@ io.on('connection', (socket) => {
       return;
     }
 
+    p.dronesDeployed = false; // Los drones se repliegan al saltar
     socket.leave(p.sector);
     p.sector = destination;
     socket.join(destination);
@@ -456,12 +535,13 @@ io.on('connection', (socket) => {
     p.wallet -= ship.cost;
     p.shipKey = shipKey;
     p.cargoMax = ship.cargoMax;
+    p.droneCapacity = ship.droneCapacity || 0;
     p.maxArmor = ship.baseArmor + ((p.skills?.armor_upgrade || 0) * 15);
     p.armor = p.maxArmor;
     p.shield = 100;
     syncPilotToCloud(p);
 
-    socket.emit('chat_broadcast', { channel: 'local', sender: 'ASTILLERO', text: `Has abordado tu [${ship.name}]. Bodega: ${ship.cargoMax} m³.` });
+    socket.emit('chat_broadcast', { channel: 'local', sender: 'ASTILLERO', text: `Has abordado tu [${ship.name}]. Bodega: ${ship.cargoMax} m³ | Bahías de drones: ${ship.droneCapacity}.` });
   });
 
   // Comercio Regional Asimétrico
@@ -486,7 +566,7 @@ io.on('connection', (socket) => {
   // Misiones PvE
   socket.on('accept_mission', (missionId) => {
     const p = universe.players[socket.id];
-    if (!p || p.sector !== 'station' || !MISSIONS_CATALOG[missionId]) return;
+    if (!p || (p.sector !== 'station' && p.sector !== 'outpost') || !MISSIONS_CATALOG[missionId]) return;
     p.activeMission = missionId;
     syncPilotToCloud(p);
     socket.emit('chat_broadcast', { channel: 'local', sender: 'AGENCIA', text: `Contrato aceptado: [${MISSIONS_CATALOG[missionId].title}].` });
@@ -614,6 +694,7 @@ io.on('connection', (socket) => {
     } else if (bp.type === 'ship') {
       p.shipKey = 'cruiser';
       p.cargoMax = SHIP_TYPES.cruiser.cargoMax;
+      p.droneCapacity = SHIP_TYPES.cruiser.droneCapacity;
       p.maxArmor = SHIP_TYPES.cruiser.baseArmor + ((p.skills?.armor_upgrade || 0) * 15);
       p.armor = p.maxArmor;
     }
@@ -623,7 +704,7 @@ io.on('connection', (socket) => {
     cachedJobs = cachedJobs.filter(j => j.jobId !== jobId);
   });
 
-  // Habilidades Pasivas
+  // Habilidades
   socket.on('train_skill', (skillKey) => {
     const p = universe.players[socket.id];
     if (!p || !SKILL_DEFS[skillKey] || p.training) return;
@@ -641,7 +722,7 @@ io.on('connection', (socket) => {
     syncPilotToCloud(p);
   });
 
-  // Minería con control de capacidad de bodega
+  // Minería manual
   socket.on('mine_cycle', () => {
     const p = universe.players[socket.id];
     if (p && p.sector === 'mining') {
@@ -658,7 +739,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Combate y Táctica
+  // Combate
   socket.on('set_order', (order) => {
     if (universe.players[socket.id]) {
       universe.players[socket.id].order = order;

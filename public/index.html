@@ -26,11 +26,10 @@
       user-select: none;
     }
 
-    /* Efecto de alarma roja y sacudida de daño */
     @keyframes redAlertPulse {
-      0% { box-shadow: inset 0 0 20px rgba(255, 49, 49, 0.4); border-color: var(--hud-red); }
-      50% { box-shadow: inset 0 0 60px rgba(255, 49, 49, 0.8); border-color: #ff0055; }
-      100% { box-shadow: inset 0 0 20px rgba(255, 49, 49, 0.4); border-color: var(--hud-red); }
+      0% { box-shadow: inset 0 0 25px rgba(255, 49, 49, 0.5); border-color: var(--hud-red); }
+      50% { box-shadow: inset 0 0 70px rgba(255, 49, 49, 0.9); border-color: #ff0055; }
+      100% { box-shadow: inset 0 0 25px rgba(255, 49, 49, 0.5); border-color: var(--hud-red); }
     }
     @keyframes screenShake {
       0% { transform: translate(1px, 1px) rotate(0deg); }
@@ -50,7 +49,8 @@
       position: relative;
       transition: border-color 0.3s;
     }
-    .red-alert-active { animation: redAlertPulse 1.2s infinite, screenShake 0.4s 1; }
+    .red-alert-active { animation: redAlertPulse 0.9s infinite, screenShake 0.4s 1; }
+    .hull-critical { animation: redAlertPulse 0.6s infinite; border-color: #ff0000 !important; }
 
     .header-bar {
       display: flex;
@@ -62,7 +62,6 @@
       letter-spacing: 1px;
     }
 
-    /* Radar Táctico */
     .radar-wrapper {
       position: relative;
       background: #02060c;
@@ -145,8 +144,11 @@
     #chat-box { height: 95px; overflow-y: auto; font-size: 0.8em; line-height: 1.4; color: #a9c7e0; }
     .chat-form { display: flex; gap: 4px; margin-top: 6px; }
     .chat-input { flex-grow: 1; background: #06111f; border: 1px solid #152d49; color: #fff; padding: 6px; font-family: inherit; font-size: 0.8em; }
+
     .sos-banner { background: #3b0d0c; border: 1px solid var(--hud-red); padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; }
     .warp-warning { background: #23083b; border: 1px solid #c77dff; padding: 6px 10px; margin-bottom: 8px; font-size: 0.82em; color: #e0aaff; font-weight: bold; }
+    .storm-banner { background: #381a00; border: 1px solid #ff9e00; padding: 6px 10px; margin-bottom: 8px; font-size: 0.82em; color: #ffd700; font-weight: bold; }
+    .ambush-banner { background: #3b0505; border: 1px solid #ff3131; padding: 6px 10px; margin-bottom: 8px; font-size: 0.82em; color: #ff9999; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
@@ -166,6 +168,8 @@
 <div class="cockpit-frame" id="cockpit-frame">
   <div id="sos-zone" style="display: none;"></div>
   <div id="warp-zone" style="display: none;" class="warp-warning"></div>
+  <div id="storm-zone" style="display: none;" class="storm-banner"></div>
+  <div id="ambush-zone" style="display: none;" class="ambush-banner"></div>
 
   <div class="header-bar">
     <div>RADAR CUADRANTE: <span id="sector-title" style="color: var(--hud-gold); font-weight:bold;">...</span></div>
@@ -235,7 +239,7 @@
     <div class="box tab-content" id="tab-trade-content">
       <b style="color:var(--hud-gold);">LOGÍSTICA REGIONAL:</b><br>
       <span id="station-rate-info">Cotización de menas: 20 ISK/m³</span><br>
-      <span style="color:#ff9e00; font-size: 0.85em;">Cotización de Bistrimita Volátil: 120 ISK/m³</span><br>
+      <span style="color:#ff9e00; font-size: 0.85em;">Cotización de Bistrimita Volátil: 120 ISK/m³ (240 ISK durante tormenta cósmica)</span><br>
       <button class="btn btn-trade" style="margin-top:6px;" onclick="socket.emit('sell_all_minerals')">Descargar y Liquidar Todo el Mineral</button>
     </div>
 
@@ -352,9 +356,10 @@
   let activeChannel = 'galaxy';
   let universeState = null;
 
-  // SINTETIZADOR DE EFECTOS DE SONIDO RETRO (Web Audio API nativo)
+  // SINTETIZADOR DE AUDIO CON ALARMA CRÍTICA EN BUCLE
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let audioCtx = null;
+  let criticalSirenInterval = null;
 
   function initAudio() {
     if (!audioCtx) audioCtx = new AudioCtx();
@@ -404,6 +409,33 @@
     gain.connect(audioCtx.destination);
     osc.start();
     osc.stop(audioCtx.currentTime + 0.16);
+  }
+
+  // Sirena de emergencia bitono cuando el casco está por colapsar (< 30 HP)
+  function triggerCriticalSiren() {
+    initAudio();
+    if (criticalSirenInterval) return;
+    let high = true;
+    criticalSirenInterval = setInterval(() => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(high ? 750 : 500, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.28);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.28);
+      high = !high;
+    }, 320);
+  }
+
+  function stopCriticalSiren() {
+    if (criticalSirenInterval) {
+      clearInterval(criticalSirenInterval);
+      criticalSirenInterval = null;
+    }
   }
 
   const SKILL_CATALOG = [
@@ -496,7 +528,6 @@
     setTimeout(() => { banner.style.display = 'none'; }, 12000);
   });
 
-  // GESTIÓN DE EFECTOS VISUALES Y NÚMEROS FLOTANTES
   let activeLaserEffect = null;
 
   socket.on('action_fx', (fx) => {
@@ -525,7 +556,6 @@
       span.style.left = '45%';
       span.style.top = '50%';
 
-      // Sacudida visual de daño
       const cockpit = document.getElementById('cockpit-frame');
       cockpit.classList.add('red-alert-active');
       setTimeout(() => cockpit.classList.remove('red-alert-active'), 600);
@@ -536,7 +566,7 @@
     setTimeout(() => span.remove(), 1400);
   });
 
-  // RADAR TÁCTICO 2D (Renderizado a 30 FPS en Canvas)
+  // RADAR TÁCTICO 2D EN CANVAS
   const radarCanvas = document.getElementById('tactical-radar');
   const rCtx = radarCanvas.getContext('2d');
   let radarAngle = 0;
@@ -549,8 +579,15 @@
 
     rCtx.clearRect(0, 0, w, h);
 
-    // Círculos concéntricos de rango táctico
-    rCtx.strokeStyle = 'rgba(0, 210, 255, 0.15)';
+    // Si hay tormenta cósmica activa en Nullsec, teñir el fondo de interferencia ámbar
+    const isStormActive = universeState?.sectors?.nullsec?.storm?.active && myPilot?.sector === 'nullsec';
+    if (isStormActive) {
+      rCtx.fillStyle = 'rgba(255, 110, 0, 0.08)';
+      rCtx.fillRect(0, 0, w, h);
+    }
+
+    // Círculos de rango
+    rCtx.strokeStyle = isStormActive ? 'rgba(255, 158, 0, 0.3)' : 'rgba(0, 210, 255, 0.15)';
     rCtx.lineWidth = 1;
     [40, 80, 120].forEach(r => {
       rCtx.beginPath();
@@ -564,19 +601,19 @@
     rCtx.moveTo(cx, cy - 125); rCtx.lineTo(cx, cy + 125);
     rCtx.stroke();
 
-    // Línea de barrido de radar rotativa
-    radarAngle += 0.03;
+    // Línea de barrido de radar
+    radarAngle += 0.035;
     rCtx.save();
     rCtx.translate(cx, cy);
     rCtx.rotate(radarAngle);
-    rCtx.strokeStyle = 'rgba(0, 210, 255, 0.4)';
+    rCtx.strokeStyle = isStormActive ? 'rgba(255, 158, 0, 0.6)' : 'rgba(0, 210, 255, 0.4)';
     rCtx.beginPath();
     rCtx.moveTo(0, 0);
     rCtx.lineTo(0, 120);
     rCtx.stroke();
     rCtx.restore();
 
-    // Nave del jugador (Triángulo verde en el centro)
+    // Nave del jugador
     rCtx.fillStyle = '#39ff14';
     rCtx.beginPath();
     rCtx.moveTo(cx, cy - 8);
@@ -585,11 +622,10 @@
     rCtx.closePath();
     rCtx.fill();
 
-    // Dibujar elementos del sector activo
     if (universeState && myPilot) {
       const me = universeState.players[socket.id];
       if (me) {
-        // 1. Drones orbitando al jugador si están desplegados
+        // Drones orbitando
         if (me.dronesDeployed && ((me.drones?.combat || 0) + (me.drones?.mining || 0)) > 0) {
           const droneAngle = Date.now() * 0.003;
           const dx = cx + Math.cos(droneAngle) * 26;
@@ -600,7 +636,21 @@
           rCtx.fill();
         }
 
-        // 2. Sector de Minería (Asteroide en rango)
+        // Pirata de emboscada en radar (en Mining o Nullsec)
+        const currentSecObj = universeState.sectors[me.sector];
+        if (currentSecObj && currentSecObj.pirateAmbush) {
+          const amb = currentSecObj.pirateAmbush;
+          const ambX = cx + 85;
+          const ambY = cy - 45;
+          rCtx.fillStyle = amb.active ? '#ff3131' : '#ffd700';
+          rCtx.beginPath();
+          rCtx.arc(ambX, ambY, 7, 0, Math.PI * 2);
+          rCtx.fill();
+          rCtx.font = '10px Courier';
+          rCtx.fillText(amb.active ? `HOSTIL: ${amb.hp} HP` : `SALTO PIRATA: ${amb.countdown}s`, ambX + 10, ambY + 3);
+        }
+
+        // Sector de Minería
         if (me.sector === 'mining') {
           const astX = cx + 75;
           const astY = cy - 35;
@@ -612,7 +662,6 @@
           rCtx.font = '10px Courier';
           rCtx.fillText("Asteroide V-4", astX + 12, astY + 4);
 
-          // Rayo de minería si está activo
           if (activeLaserEffect && activeLaserEffect.type === 'mining') {
             rCtx.strokeStyle = 'rgba(57, 255, 20, 0.8)';
             rCtx.lineWidth = 2;
@@ -625,9 +674,8 @@
           }
         }
 
-        // 3. Nullsec (Pecios, Veta Volátil y Rivales)
+        // Nullsec
         if (me.sector === 'nullsec') {
-          // Veta volátil
           const volX = cx - 70;
           const volY = cy - 40;
           rCtx.fillStyle = '#ff9e00';
@@ -638,9 +686,8 @@
           rCtx.fillText("Bistrimita Volátil", volX - 90, volY);
 
           // Pecios
-          const currentSec = universeState.sectors.nullsec;
-          if (currentSec.wrecks) {
-            currentSec.wrecks.forEach((w, i) => {
+          if (currentSecObj.wrecks) {
+            currentSecObj.wrecks.forEach((w, i) => {
               const wx = cx + 55 + (i * 18);
               const wy = cy + 45;
               rCtx.fillStyle = '#ffd700';
@@ -649,12 +696,12 @@
             });
           }
 
-          // Otras naves en Nullsec
+          // Otras naves
           for (let pid in universeState.players) {
             if (pid !== socket.id && universeState.players[pid].sector === 'nullsec') {
               const other = universeState.players[pid];
-              const ox = cx + 80;
-              const oy = cy - 20;
+              const ox = cx + 70;
+              const oy = cy + 20;
               rCtx.fillStyle = other.corp === me.corp && me.corp !== "Sin Corp" ? '#00d2ff' : '#ff3131';
               rCtx.beginPath();
               rCtx.arc(ox, oy, 5, 0, Math.PI * 2);
@@ -664,7 +711,7 @@
           }
         }
 
-        // 4. Misión PvE (Blanco pirata)
+        // PvE
         if (me.sector === 'pve' && universeState.pveEncounters && universeState.pveEncounters[me.name]) {
           const enc = universeState.pveEncounters[me.name];
           const px = cx + 85;
@@ -676,7 +723,6 @@
           rCtx.font = '11px Courier';
           rCtx.fillText(`HOSTIL: ${enc.targetName}`, px + 10, py + 4);
 
-          // Efecto de disparo
           if (activeLaserEffect) {
             rCtx.lineWidth = 2;
             if (activeLaserEffect.type === 'combat_out') {
@@ -722,11 +768,49 @@
     document.getElementById('my-cargo-total').innerText = totalCargo;
     document.getElementById('my-cargo-max').innerText = me.cargoMax || 30;
 
+    // CONTROL DE SIRENA DE COLAPSO ESTRUCTURAL (< 30% HP de casco)
+    const cockpit = document.getElementById('cockpit-frame');
+    const armorPct = Math.round((me.armor / (me.maxArmor || 100)) * 100);
+    if (armorPct <= 30 && me.sector !== 'station' && me.sector !== 'outpost') {
+      cockpit.classList.add('hull-critical');
+      triggerCriticalSiren();
+    } else {
+      cockpit.classList.remove('hull-critical');
+      stopCriticalSiren();
+    }
+
+    // ALERTA DE TORMENTA CÓSMICA
+    const stormBanner = document.getElementById('storm-zone');
+    const storm = data.sectors.nullsec?.storm;
+    if (me.sector === 'nullsec' && storm) {
+      stormBanner.style.display = 'block';
+      stormBanner.innerHTML = storm.active
+        ? `⚡ ¡TORMENTA ELECTROMAGNÉTICA ACTIVA! Daño ambiental -5 HP/s. Venta de Bistrimita al DOBLE (240 ISK/m³). Fin en ${storm.timer}s.`
+        : `⚙ Atmósfera en calma en Nullsec. Próxima tormenta electromagnética en: ${storm.timer}s.`;
+    } else {
+      stormBanner.style.display = 'none';
+    }
+
+    // ALERTA DE INCURSIÓN PIRATA EN EL SECTOR
+    const ambushBanner = document.getElementById('ambush-zone');
+    const ambush = currentSec.pirateAmbush;
+    if (ambush && (me.sector === 'mining' || me.sector === 'nullsec')) {
+      ambushBanner.style.display = 'flex';
+      if (!ambush.active) {
+        ambushBanner.innerHTML = `<span>⚠ <b>¡INCURSIÓN PIRATA INMINENTE!</b> Salto enemigo en ${ambush.countdown}s. ¡Salta ahora o prepara armas!</span>`;
+      } else {
+        ambushBanner.innerHTML = `<span>☠ <b>¡${ambush.targetName.toUpperCase()} EN COMBATE!</b> HP: ${ambush.hp}</span>
+          <button class="btn btn-sos" onclick="socket.emit('attack_ambush_pirate')">Abrir Fuego (-25 Gj)</button>`;
+      }
+    } else {
+      ambushBanner.style.display = 'none';
+    }
+
     // Alerta de alineación
     const warpZone = document.getElementById('warp-zone');
     if (me.spoolingWarp) {
       warpZone.style.display = 'block';
-      warpZone.innerText = `⚙ ALINEANDO MOTORES DE SALTO HACIA ${me.spoolingWarp.destination.toUpperCase()}: ${me.spoolingWarp.timer}s restantes...`;
+      warpZone.innerText = `⚙ ALINEANDO MOTORES DE SALTO HACIA ${me.spoolingWarp.destination.toUpperCase()}: ${me.spoolingWarp.timer}s restantes... ¡Cualquier impacto anulará el salto!`;
     } else {
       warpZone.style.display = 'none';
     }
@@ -741,18 +825,17 @@
     btnToggle.style.color = me.dronesDeployed ? "var(--hud-red)" : "var(--hud-green)";
 
     document.getElementById('bar-shield').style.width = me.shield + '%';
-    document.getElementById('bar-armor').style.width = Math.round((me.armor / (me.maxArmor || 100)) * 100) + '%';
+    document.getElementById('bar-armor').style.width = armorPct + '%';
     document.getElementById('bar-cap').style.width = me.cap + '%';
     document.getElementById('bar-cargo').style.width = Math.min(100, Math.round((totalCargo / (me.cargoMax || 30)) * 100)) + '%';
 
-    // Salto a misión
     const btnMission = document.getElementById('btn-warp-mission');
     btnMission.style.display = (me.activeMission && (me.sector === 'station' || me.sector === 'outpost')) ? 'block' : 'none';
 
-    // Rutas de salto
+    // Rutas de salto (con advertencia de 5s en sectores peligrosos)
     const jumpRoutes = {
       'station': [{ to: 'mining', name: 'Cinturón Veldspar-4' }, { to: 'nullsec', name: 'Sector Abisal Nullsec' }],
-      'mining': [{ to: 'station', name: 'Estación Central Jita' }],
+      'mining': [{ to: 'station', name: 'Estación Central Jita (5s alineación)' }],
       'nullsec': [{ to: 'station', name: 'Estación Central Jita (5s alineación)' }, { to: 'outpost', name: 'Outpost 73 (5s alineación)' }],
       'outpost': [{ to: 'nullsec', name: 'Sector Abisal Nullsec' }],
       'pve': [{ to: 'station', name: 'Retirada a Jita' }]
@@ -811,12 +894,24 @@
       `;
     } else if (me.sector === 'mining') {
       stationInterface.style.display = 'none';
-      wrecksBox.style.display = 'none';
       actionsBox.innerHTML = `
         <b style="color:var(--hud-green);">CINTURÓN DE EXTRACCIÓN (Asteroide: ${currentSec.asteroidHp}%):</b><br>
         <button class="btn btn-act" onclick="socket.emit('mine_cycle')">⚡ Disparar Láser de Minería</button>
-        <span style="font-size:0.8em; margin-left:8px; color:var(--hud-green);">(Tus drones extraen automáticamente si están desplegados)</span>
+        <span style="font-size:0.8em; margin-left:8px; color:var(--hud-green);">(Drones extraen en paralelo si están desplegados)</span>
       `;
+
+      if (currentSec.wrecks && currentSec.wrecks.length > 0) {
+        wrecksBox.style.display = 'block';
+        wrecksBox.innerHTML = `<b style="color:var(--hud-gold);">PECIOS EN CINTURÓN:</b>` +
+          currentSec.wrecks.map(w => `
+            <div style="background:#020710; border:1px dashed var(--hud-gold); padding:4px 8px; margin-top:4px; display:flex; justify-content:space-between; align-items:center; font-size:0.8em;">
+              <span>${w.name} (+${w.ore} Menas)</span>
+              <button class="btn btn-trade" onclick="socket.emit('loot_wreck', ${w.id})">Saquear</button>
+            </div>
+          `).join('');
+      } else {
+        wrecksBox.style.display = 'none';
+      }
     } else if (me.sector === 'nullsec') {
       stationInterface.style.display = 'none';
       const sov = currentSec.sovereignty;
@@ -826,7 +921,7 @@
           <button class="btn" style="border-color:var(--hud-gold); color:var(--hud-gold);" onclick="socket.emit('capture_sov')">Reclamar Baliza</button>
         </div>
         <div style="background:#221200; border:1px solid #f0883e; padding:6px; margin-bottom:6px;">
-          <b style="color:#ff9e00;">VETA DE BISTRIMITA VOLÁTIL (120 ISK/m³):</b>
+          <b style="color:#ff9e00;">VETA DE BISTRIMITA VOLÁTIL (120 ISK/m³ | 240 ISK en tormenta):</b>
           <button class="btn btn-volatile" onclick="socket.emit('mine_volatile_cycle')">⚡ Cosechar Bistrimita (Riesgo de Sobrecarga)</button>
         </div>
         <b style="color:var(--hud-red);">¡SECTOR HOSTIL! (Reloj de Turno: ${currentSec.timer}s - Ronda ${currentSec.round})</b><br>
@@ -871,7 +966,10 @@
     }
   });
 
-  socket.on('ship_destroyed', (m) => alert(m));
+  socket.on('ship_destroyed', (m) => {
+    stopCriticalSiren();
+    alert(m);
+  });
   socket.on('combat_log', (logs) => {
     appendChat(`<span style="color:var(--hud-gold);"><b>[COMBATE REGISTRADO]:</b></span>`);
     logs.forEach(l => appendChat(`> ${l}`));

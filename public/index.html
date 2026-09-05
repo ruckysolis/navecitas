@@ -832,14 +832,25 @@
     const btnMission = document.getElementById('btn-warp-mission');
     btnMission.style.display = (me.activeMission && (me.sector === 'station' || me.sector === 'outpost')) ? 'block' : 'none';
 
-    // Rutas de salto (con advertencia de 5s en sectores peligrosos)
+    // Red Estelar Completa de 6 Sistemas Solares
     const jumpRoutes = {
-      'station': [{ to: 'mining', name: 'Cinturón Veldspar-4' }, { to: 'nullsec', name: 'Sector Abisal Nullsec' }],
-      'mining': [{ to: 'station', name: 'Estación Central Jita (5s alineación)' }],
-      'nullsec': [{ to: 'station', name: 'Estación Central Jita (5s alineación)' }, { to: 'outpost', name: 'Outpost 73 (5s alineación)' }],
+      'station': [{ to: 'perimeter', name: 'Perimeter (Alta Seg.)' }, { to: 'akelios', name: 'Akelios (Frontera)' }],
+      'perimeter': [{ to: 'station', name: 'Estación Central Jita' }, { to: 'nullsec', name: 'Sector Abisal Nullsec' }],
+      'akelios': [{ to: 'station', name: 'Estación Central Jita' }, { to: 'nullsec', name: 'Sector Abisal Nullsec' }],
+      'nullsec': [
+        { to: 'perimeter', name: 'Perimeter' }, 
+        { to: 'akelios', name: 'Akelios' }, 
+        { to: 'tartarus', name: 'Tartarus Prime (Núcleo Extremo)' }, 
+        { to: 'outpost', name: 'Outpost 73 (Outer Ring)' }
+      ],
+      'tartarus': [{ to: 'nullsec', name: 'Sector Abisal Nullsec' }],
       'outpost': [{ to: 'nullsec', name: 'Sector Abisal Nullsec' }],
       'pve': [{ to: 'station', name: 'Retirada a Jita' }]
     };
+
+    document.getElementById('stargate-list').innerHTML = (jumpRoutes[me.sector] || []).map(r => `
+      <button class="btn btn-warp" onclick="warpTo('${r.to}')" ${me.spoolingWarp ? 'disabled':''}>⏵ Salto a: ${r.name}</button>
+    `).join('') || `<span style="color:#628ea6;">Sin puertas de salto en este sector.</span>`;
 
     document.getElementById('stargate-list').innerHTML = (jumpRoutes[me.sector] || []).map(r => `
       <button class="btn btn-warp" onclick="warpTo('${r.to}')" ${me.spoolingWarp ? 'disabled':''}>⏵ Salto a: ${r.name}</button>

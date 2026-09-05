@@ -14,7 +14,7 @@ module.exports = {
     'gunnery': { name: "Balística Espacial", desc: "+10% daño por nivel", baseTimeSec: 30, maxLevel: 5 },
     'armor_upgrade': { name: "Gestión de Blindaje", desc: "+15 HP casco por nivel", baseTimeSec: 40, maxLevel: 5 },
     'mining_efficiency': { name: "Extracción Minera", desc: "+2 m³ menas por nivel", baseTimeSec: 25, maxLevel: 5 },
-    'drone_interfacing': { name: "Interfaz de Drones", desc: "+10% rendimiento de drones por nivel", baseTimeSec: 35, maxLevel: 5 }
+    'drone_interfacing': { name: "Interfaz de Drones", desc: "+10% rendimiento de drones", baseTimeSec: 35, maxLevel: 5 }
   },
 
   BLUEPRINTS: {
@@ -25,5 +25,10 @@ module.exports = {
   MISSIONS_CATALOG: {
     'pirate_scout': { id: 'pirate_scout', title: "Caza: Explorador Pirata", targetName: "Fragata Corsaria 'Bloodhound'", hp: 80, dmg: 18, bounty: 150, lootOre: 10 },
     'pirate_commander': { id: 'pirate_commander', title: "Caza Mayor: Comandante", targetName: "Crucero Pirata 'Vindicator'", hp: 160, dmg: 28, bounty: 450, lootOre: 30 }
+  },
+
+  MINERAL_PRICES: {
+    ore: 20,         // Mineral base Veldspar
+    bistrimite: 120  // Mineral volátil de alto riesgo
   }
 };

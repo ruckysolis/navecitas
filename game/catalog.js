@@ -28,7 +28,39 @@ module.exports = {
   },
 
   MINERAL_PRICES: {
-    ore: 20,         // Mineral base Veldspar
-    bistrimite: 120  // Mineral volátil de alto riesgo
+    ore: 20,
+    bistrimite: 120
+  },
+
+  // Red Estelar Expandida por Niveles de Seguridad
+  SECTORS_MAP: {
+    'station': { name: "Estación Central Jita (Highsec)", type: "station", security: "1.0", npcBuyPrice: 20 },
+    'perimeter': { name: "Perimeter (Cinturón Novato)", type: "mining", security: "0.9", asteroidHp: 100 },
+    'akelios': { name: "Akelios (Lowsec Frontera)", type: "mining", security: "0.4", asteroidHp: 150 },
+    'nullsec': { 
+      name: "Sector Abisal X-99 (Nullsec)", 
+      type: "combat", 
+      security: "-0.5",
+      timer: 20, 
+      round: 1, 
+      wrecks: [],
+      volatileField: { active: true, asteroidHp: 200 },
+      storm: { active: false, timer: 45 },
+      pirateAmbush: null,
+      sovereignty: { ownerCorp: "Ninguna", progress: 0 }
+    },
+    'tartarus': {
+      name: "Tartarus Prime (Núcleo Extremo)",
+      type: "combat",
+      security: "-1.0",
+      timer: 20,
+      round: 1,
+      wrecks: [],
+      volatileField: { active: true, asteroidHp: 300 },
+      storm: { active: true, timer: 999 }, // Tormenta perpetua
+      pirateAmbush: null,
+      sovereignty: { ownerCorp: "Ninguna", progress: 0 }
+    },
+    'outpost': { name: "Outpost 73 (Outer Ring)", type: "station", security: "0.0", npcBuyPrice: 55 }
   }
 };

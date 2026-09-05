@@ -29,6 +29,7 @@
     .btn-sos { border-color: #da3633; color: #f85149; font-weight: bold; }
     .btn-mission { border-color: #f85149; color: #ff7b72; font-weight: bold; }
     .btn-drone { border-color: #3fb950; color: #7ee787; font-weight: bold; }
+    .btn-volatile { border-color: #d29922; color: #f0883e; font-weight: bold; background: #261704; }
 
     .station-nav { display: flex; gap: 4px; margin-top: 10px; margin-bottom: 6px; flex-wrap: wrap; }
     .nav-tab { background: #161b22; border: 1px solid #30363d; color: #8b949e; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 0.82em; }
@@ -50,6 +51,7 @@
     .chat-form { display: flex; gap: 4px; margin-top: 6px; }
     .chat-input { flex-grow: 1; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px; font-family: inherit; font-size: 0.8em; }
     .sos-banner { background: #3b0d0c; border: 1px solid #da3633; padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82em; }
+    .warp-warning { background: #2e1045; border: 1px solid #a371f7; padding: 6px 10px; margin-bottom: 8px; font-size: 0.82em; color: #d2a8ff; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -65,6 +67,7 @@
 
 <div class="panel">
   <div id="sos-zone" style="display: none;"></div>
+  <div id="warp-zone" style="display: none;" class="warp-warning"></div>
 
   <div class="header-bar">
     <div><strong>SECTOR: <span id="sector-title" style="color: #e3b341;">...</span></strong></div>
@@ -82,8 +85,9 @@
       <div class="bar-track"><div id="bar-armor" class="bar-fill armor-fill"></div></div>
       <div style="font-size: 0.75em;">CAPACITOR: <span id="my-cap">100</span> Gj</div>
       <div class="bar-track"><div id="bar-cap" class="bar-fill cap-fill"></div></div>
-      <div style="font-size: 0.75em;">BODEGA: <span id="my-ore">0</span> / <span id="my-cargo-max">30</span> m³</div>
+      <div style="font-size: 0.75em;">CARGA TOTAL: <span id="my-cargo-total">0</span> / <span id="my-cargo-max">30</span> m³</div>
       <div class="bar-track"><div id="bar-cargo" class="bar-fill cargo-fill"></div></div>
+      <div style="font-size: 0.75em; color: #8b949e;">Menas: <b id="my-ore" style="color:#56d364;">0</b> m³ | Bistrimita: <b id="my-bistrimite" style="color:#f0883e;">0</b> m³</div>
       <div style="font-size: 0.78em; margin-top: 4px; border-top: 1px dashed #21262d; padding-top: 4px;">
         BAHÍA DE DRONES (<span id="drone-count">0</span> / <span id="drone-cap">1</span>):
         <span id="drone-desc" style="color:#7ee787;">Ninguno</span>
@@ -119,7 +123,8 @@
     <div class="box tab-content" id="tab-trade-content">
       <b style="color:#e3b341;">LOGÍSTICA REGIONAL:</b><br>
       <span id="station-rate-info">Cotización de menas: 20 ISK/m³</span><br>
-      <button class="btn btn-trade" style="margin-top:6px;" onclick="socket.emit('sell_ore_station')">Descargar y Vender Todo el Mineral</button>
+      <span style="color:#f0883e; font-size: 0.85em;">Cotización de Bistrimita Volátil: 120 ISK/m³</span><br>
+      <button class="btn btn-trade" style="margin-top:6px;" onclick="socket.emit('sell_all_minerals')">Liquidación Total de Minerales</button>
     </div>
 
     <!-- Bolsa de Jugadores -->
@@ -162,15 +167,15 @@
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; font-size: 0.8em;">
         <div style="background:#010409; border:1px solid #30363d; padding:6px;">
           <b>Dron de Combate 'Hornet'</b><br>
-          Inflige 12 DPS por turno en Nullsec/PvE.<br>
+          12 DPS por turno en Nullsec/PvE.<br>
           <span style="color:#e3b341;">150 ISK</span><br>
-          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'combat_drone')">Equipar Dron de Combate</button>
+          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'combat_drone')">Equipar</button>
         </div>
         <div style="background:#010409; border:1px solid #30363d; padding:6px;">
           <b>Dron Minero 'Excavator'</b><br>
-          Extrae 4 m³ de mineral cada 5s en cinturón.<br>
+          4 m³ cada 5s en cinturón seguro.<br>
           <span style="color:#e3b341;">120 ISK</span><br>
-          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'mining_drone')">Equipar Dron Minero</button>
+          <button class="btn btn-drone" style="margin-top:4px;" onclick="socket.emit('buy_drone', 'mining_drone')">Equipar</button>
         </div>
       </div>
     </div>
@@ -329,10 +334,23 @@
     document.getElementById('my-armor').innerText = me.armor;
     document.getElementById('my-max-armor').innerText = me.maxArmor || 100;
     document.getElementById('my-cap').innerText = me.cap;
-    document.getElementById('my-ore').innerText = me.ore;
+    document.getElementById('my-ore').innerText = me.ore || 0;
+    document.getElementById('my-bistrimite').innerText = me.bistrimite || 0;
+
+    const totalCargo = (me.ore || 0) + (me.bistrimite || 0);
+    document.getElementById('my-cargo-total').innerText = totalCargo;
     document.getElementById('my-cargo-max').innerText = me.cargoMax || 30;
 
-    // Drones UI
+    // Alerta de Warp Spool-up
+    const warpZone = document.getElementById('warp-zone');
+    if (me.spoolingWarp) {
+      warpZone.style.display = 'block';
+      warpZone.innerText = `⚙ ALINEANDO MOTORES DE SALTO HACIA ${me.spoolingWarp.destination.toUpperCase()}: ${me.spoolingWarp.timer}s restantes...`;
+    } else {
+      warpZone.style.display = 'none';
+    }
+
+    // Drones
     const totalDrones = (me.drones?.combat || 0) + (me.drones?.mining || 0);
     document.getElementById('drone-count').innerText = totalDrones;
     document.getElementById('drone-cap').innerText = me.droneCapacity || 0;
@@ -344,23 +362,23 @@
     document.getElementById('bar-shield').style.width = me.shield + '%';
     document.getElementById('bar-armor').style.width = Math.round((me.armor / (me.maxArmor || 100)) * 100) + '%';
     document.getElementById('bar-cap').style.width = me.cap + '%';
-    document.getElementById('bar-cargo').style.width = Math.min(100, Math.round((me.ore / (me.cargoMax || 30)) * 100)) + '%';
+    document.getElementById('bar-cargo').style.width = Math.min(100, Math.round((totalCargo / (me.cargoMax || 30)) * 100)) + '%';
 
     // Salto a misión
     const btnMission = document.getElementById('btn-warp-mission');
     btnMission.style.display = (me.activeMission && (me.sector === 'station' || me.sector === 'outpost')) ? 'block' : 'none';
 
-    // Rutas de Stargates
+    // Rutas
     const jumpRoutes = {
       'station': [{ to: 'mining', name: 'Cinturón Veldspar-4' }, { to: 'nullsec', name: 'Sector Abisal Nullsec' }],
       'mining': [{ to: 'station', name: 'Estación Central Jita' }],
-      'nullsec': [{ to: 'station', name: 'Estación Central Jita' }, { to: 'outpost', name: 'Outpost 73 (Outer Ring)' }],
+      'nullsec': [{ to: 'station', name: 'Estación Central Jita (5s alineación)' }, { to: 'outpost', name: 'Outpost 73 (5s alineación)' }],
       'outpost': [{ to: 'nullsec', name: 'Sector Abisal Nullsec' }],
       'pve': [{ to: 'station', name: 'Retirada a Jita' }]
     };
 
     document.getElementById('stargate-list').innerHTML = (jumpRoutes[me.sector] || []).map(r => `
-      <button class="btn btn-warp" onclick="warpTo('${r.to}')">⏵ Salto a: ${r.name}</button>
+      <button class="btn btn-warp" onclick="warpTo('${r.to}')" ${me.spoolingWarp ? 'disabled':''}>⏵ Salto a: ${r.name}</button>
     `).join('');
 
     const actionsBox = document.getElementById('sector-actions');
@@ -371,7 +389,7 @@
       stationInterface.style.display = 'block';
       wrecksBox.style.display = 'none';
 
-      document.getElementById('station-rate-info').innerText = `Cotización local de compra: ${currentSec.npcBuyPrice} ISK por cada m³ de mineral.`;
+      document.getElementById('station-rate-info').innerText = `Cotización local de compra: ${currentSec.npcBuyPrice} ISK por cada m³ de mineral común.`;
 
       // Habilidades
       const now = Date.now();
@@ -416,7 +434,7 @@
       actionsBox.innerHTML = `
         <b style="color:#56d364;">CINTURÓN DE EXTRACCIÓN (Asteroide: ${currentSec.asteroidHp}%):</b><br>
         <button class="btn btn-act" onclick="socket.emit('mine_cycle')">Activar Láser Manual</button>
-        <span style="font-size:0.8em; margin-left:8px; color:#7ee787;">(Tus drones mineros extraen automáticamente si están desplegados)</span>
+        <span style="font-size:0.8em; margin-left:8px; color:#7ee787;">(Drones extraen en paralelo si están desplegados)</span>
       `;
     } else if (me.sector === 'nullsec') {
       stationInterface.style.display = 'none';
@@ -425,6 +443,10 @@
         <div style="border-bottom: 1px dashed #30363d; padding-bottom: 4px; margin-bottom: 4px;">
           SOBERANÍA DEL PASO: <b style="color:#f0883e;">[${sov.ownerCorp}]</b> (${sov.progress}%)
           <button class="btn btn-ship" onclick="socket.emit('capture_sov')">Reclamar Baliza</button>
+        </div>
+        <div style="background:#261704; border:1px solid #d29922; padding:6px; margin-bottom:6px;">
+          <b style="color:#f0883e;">VETA DE BISTRIMITA VOLÁTIL (120 ISK/m³):</b>
+          <button class="btn btn-volatile" onclick="socket.emit('mine_volatile_cycle')">⚡ Cosechar Bistrimita (Riesgo de Sobrecarga y Firma Visible)</button>
         </div>
         <b style="color:#ff7b72;">¡ZONA DE RIESGO! (Reloj: ${currentSec.timer}s - Ronda ${currentSec.round})</b><br>
         <button class="btn btn-act" onclick="socket.emit('set_order', 'attack')">Disparar Salva (-25 Gj)</button>
@@ -438,7 +460,7 @@
         wrecksBox.innerHTML = `<b style="color:#e3b341;">PECIOS SAQUEABLES:</b>` +
           currentSec.wrecks.map(w => `
             <div style="background:#161b22; border:1px dashed #e3b341; padding:4px 8px; margin-top:4px; display:flex; justify-content:space-between; align-items:center; font-size:0.8em;">
-              <span>${w.name} (+${w.ore} m³ menas)</span>
+              <span>${w.name} (+${w.bistrimite || 0} Bistrimita, +${w.ore} Menas)</span>
               <button class="btn btn-trade" onclick="socket.emit('loot_wreck', ${w.id})">Saquear</button>
             </div>
           `).join('');

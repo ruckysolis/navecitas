@@ -604,9 +604,11 @@ io.on('connection', (socket) => {
     if (!p || p.sector === destination || p.spoolingWarp) return;
 
     const validJumps = {
-      'station': ['mining', 'nullsec'],
-      'mining': ['station'],
-      'nullsec': ['station', 'outpost'],
+      'station': ['perimeter', 'akelios'],
+      'perimeter': ['station', 'nullsec'],
+      'akelios': ['station', 'nullsec'],
+      'nullsec': ['perimeter', 'akelios', 'tartarus', 'outpost'],
+      'tartarus': ['nullsec'],
       'outpost': ['nullsec'],
       'pve': ['station']
     };

@@ -72,27 +72,6 @@ const IndustryJob = mongoose.model('IndustryJob', IndustryJobSchema);
 
 const universe = {
   players: {},
-  sectors: {
-    'station': { name: "Estación Central Jita", type: "station", npcBuyPrice: 20 },
-    'mining': { name: "Cinturón Veldspar-4", type: "mining", asteroidHp: 100, pirateAmbush: null },
-    'nullsec': { 
-      name: "Sector Abisal X-99", 
-      type: "combat", 
-      timer: 20, 
-      round: 1, 
-      wrecks: [],
-      volatileField: { active: true, asteroidHp: 200 },
-      storm: { active: false, timer: 45 }, // Ciclo de tormenta cósmica
-      pirateAmbush: null,
-      sovereignty: { ownerCorp: "Ninguna", progress: 0 }
-    },
-    'outpost': { name: "Outpost 73 (Frontera Outer Ring)", type: "station", npcBuyPrice: 55 }
-  },
-  pveEncounters: {}
-};
-
-const universe = {
-  players: {},
   sectors: SECTORS_MAP,
   pveEncounters: {}
 };
